@@ -1,0 +1,49 @@
+name: Proposal
+description: An idea or a need. A maintainer turns an accepted proposal into tasks.
+title: 'feat: '
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the need before the solution. Every proposal is weighed against the principles in section 2 of docs/engineering-standard.md.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The need
+      description: What you cannot do today, or what is harder than it should be. A real case helps more than a general one.
+    validations:
+      required: true
+  - type: dropdown
+    id: role
+    attributes:
+      label: Who it is for
+      multiple: true
+      options:
+        - Site visitor
+        - Site editor (CMS)
+        - Site operator (install, configure, upgrade)
+        - Theme creator
+        - Contributor
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+      description: Optional. How it could look or behave.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried or considered
+      description: Optional. A workaround, another tool, a different approach.
+  - type: checkboxes
+    id: contract
+    attributes:
+      label: Does it touch a contract?
+      description: See section 6 of docs/engineering-standard.md. Leave empty if you are not sure.
+      options:
+        - label: Theme contract (roles, hooks, slots, layout variants)
+        - label: Content API between the CMS and the frontend
+        - label: Operator interface (variables, images, Compose, upgrade steps)
+        - label: Visitor-facing identifiers (URLs, feeds, fediverse, stored preferences)

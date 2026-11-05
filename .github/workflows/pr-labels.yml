@@ -1,0 +1,76 @@
+name: PR labels
+
+on:
+  pull_request:
+    types: [opened, edited, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label:
+    name: Label from the title
+    if: github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the label definitions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/labels.json
+          sparse-checkout-cone-mode: false
+
+      # A new repository has only GitHub's default labels. Create the missing ones of
+      # .github/labels.json, the set this workflow, the release notes and the issue templates use;
+      # an existing label is left as it is.
+      - name: Create the missing labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          existing=$(gh label list --repo "$REPO" --limit 500 --json name --jq '.[].name')
+          jq -c '.[]' .github/labels.json | while read -r label; do
+            name=$(jq -r .name <<< "$label")
+            if ! grep -Fxq -- "$name" <<< "$existing"; then
+              gh label create "$name" --repo "$REPO" \
+                --color "$(jq -r .color <<< "$label")" \
+                --description "$(jq -r .description <<< "$label")"
+            fi
+          done
+
+      - name: Add the label of the conventional prefix
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          type=$(printf '%s' "$TITLE" | sed -nE 's/^([a-z]+)(\([^)]*\))?!?:.*/\1/p')
+          scope=$(printf '%s' "$TITLE" | sed -nE 's/^[a-z]+\(([^)]*)\)!?:.*/\1/p')
+          case "$type" in
+            feat) labels=enhancement ;;
+            fix) labels=bug ;;
+            docs) labels=documentation ;;
+            refactor|style) labels=refactor ;;
+            test) labels=testing ;;
+            ci) labels=ci ;;
+            perf) labels=performance ;;
+            chore) labels=code-quality ;;
+            *) labels= ;;
+          esac
+          case "$scope" in
+            security|seguridad) labels="${labels:+$labels,}security" ;;
+            deps|deps-dev) labels=dependencies ;;
+          esac
+          if printf '%s' "$TITLE" | grep -qE '^[a-z]+(\([^)]*\))?!:'; then
+            labels="${labels:+$labels,}breaking"
+          else
+            # The title was edited: a PR that no longer has the marker leaves "Breaking changes"
+            gh pr edit "$PR" --repo "$REPO" --remove-label breaking || true
+          fi
+          if [ -z "$labels" ]; then
+            echo "::notice::No conventional prefix in the title; the PR will go to Other changes"
+            exit 0
+          fi
+          gh pr edit "$PR" --repo "$REPO" --add-label "$labels"

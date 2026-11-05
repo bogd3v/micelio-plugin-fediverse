@@ -1,0 +1,41 @@
+name: CI
+
+# The required checks of section 15 of the engineering standard, called from the reusable workflows of
+# micelio-engineering (docs/workflows.md there). The workflows are pinned by commit SHA.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  check:
+    if: ${{ github.event_name != 'schedule' }}
+    permissions:
+      contents: read
+    uses: bogd3v/micelio-engineering/.github/workflows/check.yml@6bdef931d988f8a75a2a164dd93ab109ff7a0d42 # main
+    with:
+      licenses: true
+      standard: true
+      reuse: true
+
+  dco:
+    if: ${{ github.event_name == 'pull_request' }}
+    permissions:
+      contents: read
+    uses: bogd3v/micelio-engineering/.github/workflows/dco.yml@6bdef931d988f8a75a2a164dd93ab109ff7a0d42 # main
+
+  scorecard:
+    if: ${{ github.event_name != 'pull_request' }}
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+      id-token: write
+    uses: bogd3v/micelio-engineering/.github/workflows/scorecard.yml@6bdef931d988f8a75a2a164dd93ab109ff7a0d42 # main

@@ -1,0 +1,38 @@
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+  categories:
+    - title: Breaking changes
+      labels:
+        - breaking
+    - title: Security
+      labels:
+        - security
+    - title: New features
+      labels:
+        - enhancement
+    - title: Fixes
+      labels:
+        - bug
+    - title: Accessibility, design and SEO
+      labels:
+        - accessibility
+        - ui/ux
+        - seo
+        - performance
+    - title: Code quality, tests and CI
+      labels:
+        - refactor
+        - code-quality
+        - testing
+        - ci
+    - title: Documentation
+      labels:
+        - documentation
+    - title: Dependencies
+      labels:
+        - dependencies
+    - title: Other changes
+      labels:
+        - '*'

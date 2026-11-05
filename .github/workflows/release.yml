@@ -1,0 +1,43 @@
+name: Release
+
+# Only the maintainer runs it (section 7 of the engineering standard). It defaults to a dry run: it
+# prints the version and the notes it would publish and changes nothing. Publishing needs a
+# `release` environment with required reviewers (README).
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Print the version and the notes without tagging or publishing
+        type: boolean
+        default: true
+      release_candidate:
+        description: Release a candidate (vX.Y.Z-rc.N) that moves neither X.Y nor latest
+        type: boolean
+        default: false
+      compatibility:
+        description: Markdown bullets for Compatibility (the core line it supports, the minimum Node); required to publish
+        type: string
+        default: ''
+      upgrade_notes:
+        description: Upgrade notes for the release body (required when a pull request is breaking)
+        type: string
+        default: ''
+
+permissions: {}
+
+jobs:
+  release:
+    # A called workflow cannot ask for more than its caller grants, also in a job that is skipped.
+    permissions:
+      contents: write
+      packages: write
+      pull-requests: read
+      actions: read
+      id-token: write
+    uses: bogd3v/micelio-engineering/.github/workflows/release.yml@6bdef931d988f8a75a2a164dd93ab109ff7a0d42 # main
+    with:
+      dry-run: ${{ inputs.dry_run }}
+      release-candidate: ${{ inputs.release_candidate }}
+      compatibility: ${{ inputs.compatibility }}
+      upgrade-notes: ${{ inputs.upgrade_notes }}
+    secrets: inherit

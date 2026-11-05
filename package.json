@@ -1,0 +1,35 @@
+{
+  "name": "@micelio/strapi-plugin-fediverse",
+  "version": "0.1.0",
+  "description": "Micelio's fediverse federation (ActivityPub) as a Strapi 5 plugin.",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "tsc -b --watch",
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "lint:licenses": "node scripts/check-licenses.mjs",
+    "lint:standard": "micelio-lint-standard",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run test && npm run lint:licenses && npm run lint:standard"
+  },
+  "devDependencies": {
+    "@micelio/eslint-config": "^0.2.3",
+    "@micelio/prettier-config": "^0.1.0",
+    "@micelio/tsconfig": "^0.1.0",
+    "@types/node": "^22.20.5",
+    "eslint": "^10.12.0",
+    "prettier": "^3.9.10",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.3"
+  },
+  "prettier": "@micelio/prettier-config"
+}

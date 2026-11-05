@@ -1,0 +1,12 @@
+version = 1
+SPDX-PackageName = "Micelio Plugin Fediverse"
+SPDX-PackageDownloadLocation = "https://github.com/bogd3v/micelio-plugin-fediverse"
+
+# Licensing of every file, by path (REUSE specification 3.3). Later annotations win over earlier ones;
+# THIRD-PARTY.md explains the third-party entries.
+
+# Micelio: AGPL-3.0-only (LICENSE)
+[[annotations]]
+path = "**"
+SPDX-FileCopyrightText = "2026 Alejandro Ramirez Garcia and the Micelio contributors"
+SPDX-License-Identifier = "AGPL-3.0-only"

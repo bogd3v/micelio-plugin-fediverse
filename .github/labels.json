@@ -1,0 +1,30 @@
+[
+  { "name": "enhancement", "color": "a2eeef", "description": "New feature or request" },
+  { "name": "bug", "color": "d73a4a", "description": "Something isn't working" },
+  {
+    "name": "documentation",
+    "color": "0075ca",
+    "description": "Improvements or additions to documentation"
+  },
+  { "name": "refactor", "color": "cfd3d7", "description": "Refactors" },
+  { "name": "code-quality", "color": "cfd3d7", "description": "Refactors and cleanups" },
+  { "name": "testing", "color": "bfd4f2", "description": "Tests" },
+  { "name": "ci", "color": "bfdadc", "description": "CI / CD" },
+  { "name": "performance", "color": "fbca04", "description": "Speed or efficiency wins" },
+  { "name": "security", "color": "b60205", "description": "Security fixes" },
+  {
+    "name": "dependencies",
+    "color": "0366d6",
+    "description": "Pull requests that update a dependency file"
+  },
+  { "name": "breaking", "color": "b60205", "description": "Breaking change: needs upgrade notes" },
+  { "name": "accessibility", "color": "5319e7", "description": "A11y / WCAG improvements" },
+  { "name": "ui/ux", "color": "1f883d", "description": "Visual or interaction polish" },
+  { "name": "seo", "color": "0e8a16", "description": "Search engine visibility" },
+  {
+    "name": "ignore-for-release",
+    "color": "ededed",
+    "description": "Left out of the release notes"
+  },
+  { "name": "épica", "color": "5319e7", "description": "A goal that takes several issues" }
+]
