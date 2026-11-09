@@ -1,0 +1,21 @@
+name: Issue ready
+
+# Gate 1 of the factory (docs/factory.md of micelio-engineering): lint-issue on every issue
+# opened, edited or given a milestone by the people who work on the repository, then the label
+# `ready` and the organisation project's Status, Release line and Front.
+on:
+  issues:
+    types: [opened, edited, milestoned]
+
+permissions: {}
+
+jobs:
+  issue-ready:
+    permissions:
+      contents: read
+      issues: read
+    uses: bogd3v/micelio-engineering/.github/workflows/issue-ready.yml@c58eca22d25248deb7ea013d672dee570e06af62 # main
+    with:
+      tools-ref: c58eca22d25248deb7ea013d672dee570e06af62
+    secrets:
+      MICELIO_BOT_PRIVATE_KEY: ${{ secrets.MICELIO_BOT_PRIVATE_KEY }}
