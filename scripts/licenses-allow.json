@@ -1,0 +1,6 @@
+{
+  "only": {
+    "version": "0.0.2",
+    "reason": "MIT (README of the package, no license field); a dependency of koa, which @fedify/koa needs"
+  }
+}

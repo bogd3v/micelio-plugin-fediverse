@@ -1,0 +1,53 @@
+{
+  "collectionName": "components_shared_image_credits",
+  "info": {
+    "displayName": "Image credit",
+    "icon": "picture",
+    "description": "Who made an image, where it comes from and under which license"
+  },
+  "options": {},
+  "attributes": {
+    "kind": {
+      "type": "enumeration",
+      "enum": ["photo", "illustration", "diagram", "screenshot"],
+      "default": "photo",
+      "required": true
+    },
+    "author": {
+      "type": "string"
+    },
+    "authorUrl": {
+      "type": "string",
+      "regex": "^https?://\\S+$"
+    },
+    "source": {
+      "type": "string"
+    },
+    "sourceUrl": {
+      "type": "string",
+      "regex": "^https?://\\S+$"
+    },
+    "license": {
+      "type": "enumeration",
+      "enum": [
+        "own-work",
+        "cc0",
+        "public-domain",
+        "cc-by-4.0",
+        "cc-by-sa-4.0",
+        "cc-by-nc-4.0",
+        "unsplash",
+        "permission",
+        "other"
+      ],
+      "required": true
+    },
+    "licenseUrl": {
+      "type": "string",
+      "regex": "^https?://\\S+$"
+    },
+    "modifications": {
+      "type": "string"
+    }
+  }
+}

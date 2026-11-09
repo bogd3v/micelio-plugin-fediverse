@@ -6,4 +6,4 @@ When you add some (code, fonts, images, logos), list it here with its source and
 
 ## Dependencies
 
-npm packages (`package.json`, `package-lock.json`) are distributed under their own licenses, which each package carries. `npm run lint:licenses` fails when a production dependency has a license that cannot be combined with AGPL-3.0; the allowlist is the one shipped in `@micelio/eslint-config`.
+npm packages (`package.json`, `package-lock.json`) are distributed under their own licenses, which each package carries. `npm run lint:licenses` fails when a production dependency has a license that cannot be combined with AGPL-3.0; the allowlist is the one shipped in `@micelio/eslint-config`, and the exceptions, each with its reason, are in `scripts/licenses-allow.json`.

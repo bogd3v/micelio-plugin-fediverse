@@ -1,5 +1,7 @@
 // Fails on production dependencies whose licence is not on the allowlist of @micelio/eslint-config
-// (ADR 0007, AGPL-3.0-only). Dev dependencies are not distributed: they only warn.
+// (ADR 0007, AGPL-3.0-only). Dev dependencies are not distributed: they only warn. A package that
+// carries no licence field but whose licence was read in its repository is excepted, with the
+// reason, in scripts/licenses-allow.json (as in micelio-cms).
 //
 //   node scripts/check-licenses.mjs [--lock path/to/package-lock.json] [--summary]
 import { readFileSync } from 'node:fs'
@@ -81,6 +83,9 @@ function main() {
   const lockPath =
     flag === -1 ? new URL('../package-lock.json', import.meta.url) : process.argv[flag + 1]
   const lock = JSON.parse(readFileSync(lockPath, 'utf8'))
+  const exceptions = JSON.parse(
+    readFileSync(new URL('./licenses-allow.json', import.meta.url), 'utf8')
+  )
   const counts = {}
   const failures = []
   const warnings = []
@@ -91,6 +96,8 @@ function main() {
     const license = licenseOf(meta)
     counts[license ?? 'UNKNOWN'] = (counts[license ?? 'UNKNOWN'] ?? 0) + 1
     if (license && evaluate(license)) continue
+    // An exception names the version it reviewed: a later release has to be reviewed again.
+    if (exceptions[name]?.reason && exceptions[name].version === meta.version) continue
     const entry = `${name}@${meta.version} (${license ?? 'no license field'})${meta.dev ? ' [dev]' : ''}`
     ;(meta.dev ? warnings : failures).push(entry)
   }
@@ -100,7 +107,7 @@ function main() {
   if (failures.length) {
     for (const failure of new Set(failures)) console.error(`error: ${failure}`)
     console.error(
-      'Remove the dependency, or change the allowlist in @micelio/eslint-config (ADR 0007).'
+      'Remove the dependency, add a reasoned exception to scripts/licenses-allow.json, or change the allowlist in @micelio/eslint-config (ADR 0007).'
     )
     process.exit(1)
   }

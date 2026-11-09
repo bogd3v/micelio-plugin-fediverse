@@ -1,10 +1,14 @@
 {
+  // The tests, the scripts and the configuration files. The plugin's own code is checked by
+  // server/tsconfig.json and admin/tsconfig.json.
   "extends": "@micelio/tsconfig",
   "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "dist",
-    "composite": true,
+    // The suites run in Vitest (ES modules) and import the server's sources and the ESM-only `@fedify/*`.
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "target": "ES2022",
+    "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src"]
+  "include": ["test", "vitest.config.mts", "eslint.config.mjs"]
 }

@@ -1,0 +1,41 @@
+{
+  "kind": "collectionType",
+  "collectionName": "fediverse_interactions",
+  "info": {
+    "singularName": "interaction",
+    "pluralName": "interactions",
+    "displayName": "Fediverse Interaction",
+    "description": "Likes and boosts received from remote fediverse actors on federated articles"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {
+    "content-manager": {
+      "visible": true
+    }
+  },
+  "attributes": {
+    "type": {
+      "type": "enumeration",
+      "enum": ["like", "boost"],
+      "required": true
+    },
+    "actorId": {
+      "type": "string",
+      "required": true
+    },
+    "handle": {
+      "type": "string"
+    },
+    "articleDocumentId": {
+      "type": "string",
+      "required": true
+    },
+    "interactionKey": {
+      "type": "string",
+      "required": true,
+      "unique": true
+    }
+  }
+}

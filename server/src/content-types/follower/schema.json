@@ -1,0 +1,44 @@
+{
+  "kind": "collectionType",
+  "collectionName": "fediverse_followers",
+  "info": {
+    "singularName": "follower",
+    "pluralName": "followers",
+    "displayName": "Fediverse Follower",
+    "description": "Remote fediverse actors following the blog actor"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {
+    "content-manager": {
+      "visible": true
+    }
+  },
+  "attributes": {
+    "actorId": {
+      "type": "string",
+      "required": true,
+      "unique": true
+    },
+    "handle": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "inbox": {
+      "type": "string"
+    },
+    "avatar": {
+      "type": "string"
+    },
+    "blocked": {
+      "type": "boolean",
+      "default": false
+    },
+    "unreachableSince": {
+      "type": "datetime"
+    }
+  }
+}
