@@ -2,3 +2,5 @@ package-lock.json
 docs/engineering-standard.md
 dist/
 docs/standard/
+test/app/types/
+test/app/.tmp/

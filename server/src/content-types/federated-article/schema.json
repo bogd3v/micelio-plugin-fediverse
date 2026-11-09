@@ -1,0 +1,47 @@
+{
+  "kind": "collectionType",
+  "collectionName": "fediverse_federated_articles",
+  "info": {
+    "singularName": "federated-article",
+    "pluralName": "federated-articles",
+    "displayName": "Fediverse Federated Article",
+    "description": "Federation state of an article: the last activity sent for it, when and with what outcome"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {
+    "content-manager": {
+      "visible": true
+    }
+  },
+  "attributes": {
+    "articleDocumentId": {
+      "type": "string",
+      "required": true,
+      "unique": true
+    },
+    "status": {
+      "type": "enumeration",
+      "enum": ["created", "updated", "deleted", "failed"],
+      "required": true
+    },
+    "createSentAt": {
+      "type": "datetime"
+    },
+    "lastActivityAt": {
+      "type": "datetime"
+    },
+    "lastActivityType": {
+      "type": "enumeration",
+      "enum": ["Create", "Update", "Delete"]
+    },
+    "attempts": {
+      "type": "integer",
+      "default": 0
+    },
+    "lastError": {
+      "type": "text"
+    }
+  }
+}

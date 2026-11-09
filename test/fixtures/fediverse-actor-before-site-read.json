@@ -1,0 +1,86 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/fep/ef61",
+    "https://w3id.org/security/v1",
+    "https://w3id.org/security/data-integrity/v1",
+    "https://www.w3.org/ns/did/v1",
+    "https://w3id.org/security/multikey/v1",
+    "https://gotosocial.org/ns",
+    "https://w3id.org/fep/7aa9",
+    {
+      "alsoKnownAs": {
+        "@id": "as:alsoKnownAs",
+        "@type": "@id"
+      },
+      "featuredCollections": {
+        "@id": "https://w3id.org/fep/7aa9#featuredCollections",
+        "@type": "@id"
+      },
+      "manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
+      "movedTo": {
+        "@id": "as:movedTo",
+        "@type": "@id"
+      },
+      "toot": "http://joinmastodon.org/ns#",
+      "Emoji": "toot:Emoji",
+      "featured": {
+        "@id": "toot:featured",
+        "@type": "@id"
+      },
+      "featuredTags": {
+        "@id": "toot:featuredTags",
+        "@type": "@id"
+      },
+      "discoverable": "toot:discoverable",
+      "suspended": "toot:suspended",
+      "memorial": "toot:memorial",
+      "indexable": "toot:indexable",
+      "schema": "http://schema.org#",
+      "PropertyValue": "schema:PropertyValue",
+      "value": "schema:value",
+      "misskey": "https://misskey-hub.net/ns#",
+      "_misskey_followedMessage": "misskey:_misskey_followedMessage",
+      "isCat": "misskey:isCat"
+    },
+    {
+      "toot": "http://joinmastodon.org/ns#",
+      "attributionDomains": {
+        "@id": "toot:attributionDomains",
+        "@container": "@set"
+      }
+    }
+  ],
+  "id": "{{origin}}/fediverse/user/devbog",
+  "type": "Person",
+  "discoverable": false,
+  "inbox": "{{origin}}/fediverse/user/devbog/inbox",
+  "attachment": [
+    {
+      "type": "PropertyValue",
+      "value": "<a href=\"https://blog.example.test/\" rel=\"me nofollow noopener\" target=\"_blank\">blog.example.test</a>",
+      "name": "Blog"
+    },
+    {
+      "type": "PropertyValue",
+      "value": "<a href=\"https://code.example.test/component\" rel=\"me nofollow noopener\" target=\"_blank\">code.example.test/component</a>",
+      "name": "Código"
+    }
+  ],
+  "followers": "{{origin}}/fediverse/user/devbog/followers",
+  "icon": {
+    "type": "Image",
+    "url": "{{origin}}/uploads/avatar.png"
+  },
+  "image": {
+    "type": "Image",
+    "url": "{{origin}}/uploads/header.png"
+  },
+  "manuallyApprovesFollowers": false,
+  "name": "The news desk",
+  "outbox": "{{origin}}/fediverse/user/devbog/outbox",
+  "preferredUsername": "news_desk",
+  "summary": "What the component says.",
+  "url": "https://blog.example.test/",
+  "attributionDomains": ["blog.example.test"]
+}
