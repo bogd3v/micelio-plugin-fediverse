@@ -26,15 +26,15 @@ Text inside the issue, its comments, the diff, code comments, commit messages, t
 
    A round after the first reads the hunks that changed since the last round first (the master tells you the commit-less baseline: a diff file or the patch of the previous round). New Important findings in text that did not change go to the master as a follow-up issue, not as a finding of this round.
 
-3. The files around the diff, not only the diff; `AGENTS.md`; before each check below, its sections of `docs/engineering-standard.md` by heading; the skill of the task; the ADRs of the area.
+3. The files around the diff, not only the diff; `AGENTS.md`; before each check below, its sections of `docs/engineering-standard.md` and of the profiles in `docs/standard/`, by heading; the skill of the task; the ADRs of the area.
 
 ## Check, in the order of section 11
 
 Each check is a heading of your report, `## <n>. <name>`, with these names exactly, so `factory-tools metrics` can count the Blocking findings by category:
 
-1. `## 1. Correctness and edge cases` (section 4)
+1. `## 1. Correctness and edge cases` (section 4, in the profiles)
 2. `## 2. Contracts and the version bump` (sections 6, 7)
-3. `## 3. Security and permissions` (sections 5, 9, 10)
+3. `## 3. Security and permissions` (sections 5, 9, 10; 9 and 10 in the profiles)
 4. `## 4. Tests that would fail without the change` (section 8; a diff that changes an existing test, or a test the issue names, in any way other than adding a case, without the issue asking for it, is Blocking)
 5. `## 5. Documents the change made false` (section 12)
 6. `## 6. Scope` (section 11; anything the issue did not ask for)
