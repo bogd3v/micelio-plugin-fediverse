@@ -3,10 +3,10 @@ import type { Core } from '@strapi/strapi'
 import { getFederationBackendKind, getFederationKv } from '../federation'
 import type { Diagnostic, DiagnosticFailure } from '../types/plugin-page'
 import { ActorKeyDecryptionError } from '../utils/key-encryption'
-import { webFingerSubject } from '../utils/handle-host'
 import { publicOrigin } from '../utils/public-origin'
 import { countFollowers } from './followers'
 import { getActorUsername } from './actor-profile'
+import { defaultActorSite, handleHostOf } from './actor-sites'
 import { countInboxRefusals } from './inbox-refusals'
 import { verifyStoredActorKey } from './keys'
 
@@ -65,7 +65,9 @@ async function checkWebFinger(
   origin: string | undefined
 ): Promise<Diagnostic> {
   if (origin == null) return failed('webfinger', 'webfinger-skipped')
-  const subject = webFingerSubject(await getActorUsername(strapi), origin)
+  const site = await defaultActorSite(strapi)
+  const host = handleHostOf(site ?? { hosts: [] }, origin)
+  const subject = `acct:${await getActorUsername(strapi)}@${host}`
   let response: Response
   try {
     response = await fetch(

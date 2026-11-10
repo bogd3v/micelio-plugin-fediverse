@@ -1,77 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { setFediverseUsername } from './helpers/fediverse-profile'
 import { setupStrapi, cleanupStrapi, serverHost } from './strapi'
-import { federationOrigin, handleHost, webFingerSubject } from '../server/src/utils/handle-host'
 
 const ACTIVITY_JSON = 'application/activity+json'
 const CMS_ORIGIN = 'https://cms.example.test'
 const HANDLE_HOST = 'example.test'
-
-describe('handleHost and federationOrigin', () => {
-  const env = (vars: Record<string, string>): NodeJS.ProcessEnv => ({ ...vars })
-  const saved = process.env.URL
-  afterAll(() => {
-    if (saved === undefined) delete process.env.URL
-    else process.env.URL = saved
-  })
-
-  it('is unset by default, which keeps the handle on the CMS host', () => {
-    process.env.URL = CMS_ORIGIN
-    expect(handleHost(env({}))).toBeUndefined()
-    expect(federationOrigin(env({}))).toBe(CMS_ORIGIN)
-  })
-
-  it('splits the handle host from the web origin when it names another host', () => {
-    process.env.URL = CMS_ORIGIN
-    const vars = env({ FEDIVERSE_HANDLE_HOST: ' Example.Test ' })
-    expect(handleHost(vars)).toBe(HANDLE_HOST)
-    expect(federationOrigin(vars)).toEqual({ handleHost: HANDLE_HOST, webOrigin: CMS_ORIGIN })
-  })
-
-  it('keeps the plain origin when it names the CMS host itself', () => {
-    process.env.URL = CMS_ORIGIN
-    expect(federationOrigin(env({ FEDIVERSE_HANDLE_HOST: 'cms.example.test' }))).toBe(CMS_ORIGIN)
-  })
-
-  it.each(['https://example.test', 'example.test/path', 'exa mple.test', 'example.test?x=1'])(
-    'refuses %j and names the variable',
-    (value) => {
-      process.env.URL = CMS_ORIGIN
-      expect(() => handleHost(env({ FEDIVERSE_HANDLE_HOST: value }))).toThrow(
-        /FEDIVERSE_HANDLE_HOST must be a host/
-      )
-    }
-  )
-
-  it('refuses a handle host while URL is unset, because the ids need the CMS origin', () => {
-    delete process.env.URL
-    expect(() => handleHost(env({ FEDIVERSE_HANDLE_HOST: HANDLE_HOST }))).toThrow(
-      /FEDIVERSE_HANDLE_HOST needs URL/
-    )
-  })
-})
-
-describe('the WebFinger check of the Fediverse page', () => {
-  const saved = { url: process.env.URL, host: process.env.FEDIVERSE_HANDLE_HOST }
-  afterAll(() => {
-    for (const [name, value] of [
-      ['URL', saved.url],
-      ['FEDIVERSE_HANDLE_HOST', saved.host],
-    ] as const) {
-      if (value === undefined) delete process.env[name]
-      else process.env[name] = value
-    }
-  })
-
-  it('asks for the CMS host by default and for the handle host when it is set', () => {
-    process.env.URL = CMS_ORIGIN
-    delete process.env.FEDIVERSE_HANDLE_HOST
-    expect(webFingerSubject('bogdev', CMS_ORIGIN)).toBe('acct:bogdev@cms.example.test')
-
-    process.env.FEDIVERSE_HANDLE_HOST = HANDLE_HOST
-    expect(webFingerSubject('bogdev', CMS_ORIGIN)).toBe(`acct:bogdev@${HANDLE_HOST}`)
-  })
-})
 
 describe('Fediverse handle host', () => {
   const saved = { ...process.env }
@@ -88,6 +21,10 @@ describe('Fediverse handle host', () => {
     process.env.FEDIVERSE_HANDLE_HOST = HANDLE_HOST
     await setupStrapi()
     await setFediverseUsername('bogdev')
+    // The first boot created the default site after the package's bootstrap; the next one is the
+    // upgrade that pins the handle host as the first of the site's hosts.
+    await cleanupStrapi({ keepDatabase: true })
+    await setupStrapi({ keepDatabase: true })
   })
 
   afterAll(async () => {

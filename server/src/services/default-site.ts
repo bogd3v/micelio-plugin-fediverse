@@ -1,6 +1,7 @@
 import type { Core } from '@strapi/strapi'
 
 import { migrateFederatedArticles } from './federated-articles'
+import { ensureIdentifiers } from './cut-over'
 import { getActorKeyPairs } from './keys'
 
 // Self-contained on purpose (standard, section 6): this step keeps its own constants, so it keeps
@@ -116,7 +117,11 @@ export async function onSiteCreated(
   strapi: Core.Strapi,
   { site, isDefault }: { site: string; isDefault: boolean }
 ): Promise<void> {
-  if (!isDefault) return
+  // A new site's actor path is its slug. The default site's is written by the boot step.
+  if (!isDefault) {
+    await ensureIdentifiers(strapi, site)
+    return
+  }
   await adoptDefaultSite(strapi)
   await migrateStoredArticles(strapi)
   await getActorKeyPairs(strapi, site)

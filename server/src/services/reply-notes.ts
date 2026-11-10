@@ -14,7 +14,12 @@ import type { Context } from '@fedify/fedify'
 import { COMMENT_UID } from '../constants/uids'
 import type { ReplyComment, ReplyTarget } from '../types/reply-notes'
 import { escapeHtml } from '../utils/html'
-import { findPublishedArticle, getFrontendArticleUrl, toInstant } from './articles'
+import {
+  findPublishedArticle,
+  frontendDefaultLocale,
+  getFrontendArticleUrl,
+  toInstant,
+} from './articles'
 import { isActorBlocked } from './followers'
 
 const RELATED_PREFIX = 'api::article.article:'
@@ -124,7 +129,11 @@ export async function resolveReplyTarget(
     parentUri: parent.fediverseUri,
     remoteAuthorId: parent.authorId,
     remoteAuthorHandle: parent.fediverseActorHandle,
-    articleUrl: getFrontendArticleUrl(article.slug, article.locale),
+    articleUrl: getFrontendArticleUrl(
+      article.slug,
+      article.locale,
+      await frontendDefaultLocale(strapi)
+    ),
     deliverToAuthor: !(await isActorBlocked(strapi, parent.authorId)),
   }
 }

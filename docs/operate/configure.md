@@ -22,20 +22,19 @@ The plugin reads and writes content types it does not own, and it never imports 
 
 `.env.example` lists the names with a safe example value; this table says what each does.
 
-| Variable                          | Default                                                       | Purpose                                                                                                                                                                                                                                                                                                  |
-| --------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FEDIVERSE_ENABLED`               | `false`                                                       | Master switch (enable explicitly, e.g. staging before prod)                                                                                                                                                                                                                                              |
-| `URL` _(Strapi's own)_            | `http://localhost:1337`                                       | **Must be the public origin** (e.g. `https://cms.example.com`). Fan-out runs outside any request and builds every activity id from it; a wrong value makes ids disagree with the ones served over HTTP                                                                                                   |
-| `FEDIVERSE_HANDLE_HOST`           | _(unset: the host of `URL`)_                                  | Host of the handle (`@blog@example.com`) when it is not the CMS host (bogd3v/micelio-cms#298). Needs `URL`; the boot stops on a value that is not a bare host. See [A handle on the site's domain](#a-handle-on-the-sites-domain-fediverse_handle_host). Also listed in the actor's `attributionDomains` |
-| `FEDIVERSE_ACTOR_USERNAME`        | _(unset)_                                                     | **Removed** (bogd3v/micelio-cms#307): a boot with it set stops, naming the site settings' `fediverse.username`. The handle's `@user` is that setting, else the identifier                                                                                                                                |
-| `FEDIVERSE_ACTOR_IDENTIFIER`      | _(required)_                                                  | Path of the actor URI (`/fediverse/user/blog`). Never change it: remote servers key the account and its followers by that URI                                                                                                                                                                            |
-| `FEDIVERSE_ACTOR_NAME`            | _(unset)_                                                     | **Removed** (bogd3v/micelio-cms#307): a boot with it set stops, naming `fediverse.displayName`                                                                                                                                                                                                           |
-| `FEDIVERSE_ACTOR_SUMMARY`         | _(unset)_                                                     | **Removed** (bogd3v/micelio-cms#307): a boot with it set stops, naming `fediverse.summary`                                                                                                                                                                                                               |
-| `FEDIVERSE_ACTOR_SOURCE_URL`      | _(unset)_                                                     | **Removed** (bogd3v/micelio-cms#307): a boot with it set stops, naming `fediverse.sourceUrl`; the "Código" link is that setting, else `https://github.com/bogd3v/micelio-cms`                                                                                                                            |
-| `FRONTEND_URL`                    | _(required in production)_; `http://localhost:3000` otherwise | Human-facing `url` embedded in federated `Article` objects. Without it in production the plugin refuses to start. Its host is also the actor's `attributionDomains` ([Author credit on Mastodon link cards](#author-credit-on-mastodon-link-cards))                                                      |
-| `FRONTEND_ARTICLE_PATH`           | `/blog/{slug}`                                                | Article URL pattern (confirmed against the frontend repo: default locale, `prefix_except_default`)                                                                                                                                                                                                       |
-| `FRONTEND_DEFAULT_LOCALE`         | `en`                                                          | Locale the frontend serves without a URL prefix (Nuxt `prefix_except_default`); articles in any other locale get `/<locale>` in their link, e.g. `https://example.com/es/blog/{slug}`                                                                                                                    |
-| `ENCRYPTION_KEY` _(Strapi's own)_ | _(required)_                                                  | Encrypts the actor's private key at rest and the key inside queued deliveries. Changing it makes the stored key unreadable: federation then fails closed until the old value is back ([security/keys.md](../security/keys.md#rotating-encryption_key))                                                   |
+| Variable                          | Default                                                       | Purpose                                                                                                                                                                                                                                                                                                           |
+| --------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FEDIVERSE_ENABLED`               | `false`                                                       | Master switch (enable explicitly, e.g. staging before prod)                                                                                                                                                                                                                                                       |
+| `URL` _(Strapi's own)_            | `http://localhost:1337`                                       | **Must be the public origin** (e.g. `https://cms.example.com`). Fan-out runs outside any request and builds every activity id from it; a wrong value makes ids disagree with the ones served over HTTP                                                                                                            |
+| `FEDIVERSE_ACTOR_USERNAME`        | _(unset)_                                                     | **Removed** (bogd3v/micelio-cms#307): a boot with it set stops, naming the site settings' `fediverse.username`. The handle's `@user` is that setting, else the identifier                                                                                                                                         |
+| `FEDIVERSE_ACTOR_IDENTIFIER`      | _(required)_                                                  | Path of the default site's actor URI (`/fediverse/user/blog`). The first 0.7 boot copies it to the site's **Fediverse actor** section, whose identifier cannot change once set; other sites get their `slug`. Never change it: remote servers key the account and its followers by that URI                       |
+| `FEDIVERSE_ACTOR_NAME`            | _(unset)_                                                     | **Removed** (bogd3v/micelio-cms#307): a boot with it set stops, naming `fediverse.displayName`                                                                                                                                                                                                                    |
+| `FEDIVERSE_ACTOR_SUMMARY`         | _(unset)_                                                     | **Removed** (bogd3v/micelio-cms#307): a boot with it set stops, naming `fediverse.summary`                                                                                                                                                                                                                        |
+| `FEDIVERSE_ACTOR_SOURCE_URL`      | _(unset)_                                                     | **Removed** (bogd3v/micelio-cms#307): a boot with it set stops, naming `fediverse.sourceUrl`; the "Código" link is that setting, else `https://github.com/bogd3v/micelio-cms`                                                                                                                                     |
+| `FRONTEND_URL`                    | _(required in production)_; `http://localhost:3000` otherwise | Human-facing `url` embedded in federated `Article` objects. Without it in production the plugin refuses to start. The first 0.7 boot adds its host to the default site's `hosts` ([Hosts, the handle and the attribution list](#hosts-the-handle-and-the-attribution-list))                                       |
+| `FRONTEND_ARTICLE_PATH`           | `/blog/{slug}`                                                | Article URL pattern (confirmed against the frontend repo: default locale, `prefix_except_default`)                                                                                                                                                                                                                |
+| `FRONTEND_DEFAULT_LOCALE`         | `en`                                                          | **Deprecated**: the site's **Default locale** is the locale the frontend serves without a URL prefix (Nuxt `prefix_except_default`); this variable is read only when the site has none, and logs a warning. Articles in any other locale get `/<locale>` in their link, e.g. `https://example.com/es/blog/{slug}` |
+| `ENCRYPTION_KEY` _(Strapi's own)_ | _(required)_                                                  | Encrypts the actor's private key at rest and the key inside queued deliveries. Changing it makes the stored key unreadable: federation then fails closed until the old value is back ([security/keys.md](../security/keys.md#rotating-encryption_key))                                                            |
 
 The four `FEDIVERSE_ACTOR_*` variables marked **removed** are not read. A boot with federation on and one of them set (not blank) stops, naming the setting that replaces it (`server/src/utils/removed-variables.ts`); move the value into the site settings first, then delete the variable. With `FEDIVERSE_ENABLED=false` the plugin is not loaded and nothing is checked. While enabled, `FEDIVERSE_ACTOR_IDENTIFIER` has no default: without it the plugin refuses to start.
 
@@ -43,48 +42,45 @@ The four `FEDIVERSE_ACTOR_*` variables marked **removed** are not read. A boot w
 
 The actor's profile is edited in the admin panel, not in the environment: Content Manager → Sites → the entry marked default → **Fediverse profile** has the username (the handle's `@user`, lowercase letters, digits and `_`; changing it keeps the followers, and the identifier keeps resolving, but the previous username does not), the display name, a summary of up to 500 characters (plain text), a header image (1500×500 recommended; the size is not checked), whether the account is discoverable (on by default) and the source URL shown in the "Código" field. **Object type** chooses what articles are sent as: `Note` (the default: a regular post with the title, excerpt and link, the shape Ghost and WriteFreely use, which GoToSocial shows without hiding it behind the title) or `Article` (shown by Mastodon as a title and a shortened link). Switching sends nothing and keeps every link and id: posts already sent keep their type until their next edit. Saving the profile sends an `Update(Person)` to the followers' servers. An empty field uses the site's identity: the display name and the summary are Global's name and description, then the default site's name and description. With none of them the handle is the identifier and there is no bio. The order of each field is in [architecture/federation.md](../architecture/federation.md#actor-profile-in-the-site-settings).
 
-## Author credit on Mastodon link cards
+## Hosts, the handle and the attribution list
 
-The actor lists the host of `FRONTEND_URL`, and `FEDIVERSE_HANDLE_HOST` when set, in its `attributionDomains`, so Mastodon shows the blog's account on the card of a shared article. It works only when the site's canonical URL (the site settings' URL, or the frontend's `NUXT_PUBLIC_SITE_URL`) is on one of those hosts or a subdomain of them. A restart that changes them sends an `Update(Person)` to the followers. Details and how to check it: [architecture/federation.md](../architecture/federation.md#author-attribution).
+Since 0.7 the hosts of the site, not variables, decide both (`FEDIVERSE_HANDLE_HOST` and the host list built from `FRONTEND_URL` are gone; [upgrade notes](upgrade-0.7.md)). In Content Manager → Sites → your site → **Hosts**:
 
-## A handle on the site's domain (`FEDIVERSE_HANDLE_HOST`)
+- **The handle host is the first host.** With `example.com` first, the handle is `@blog@example.com`. A site with no hosts keeps the host of `URL` (`@blog@cms.example.com`). Every id stays on the CMS origin, so changing the first host moves no follower.
+- **The actor lists every host in `attributionDomains`**, lower case and without port, so Mastodon shows the blog's account on the card of a shared article. It works only when the site's canonical URL is on one of those hosts or a subdomain of them. A site with no hosts lists none. Any change of the hosts sends an `Update(Person)` to the followers. Details and how to check it: [architecture/federation.md](../architecture/federation.md#author-attribution).
+- **Only a host of the site resolves in WebFinger** (or the host of `URL` while the site has no hosts). The site domain must forward `/.well-known/webfinger` to the CMS: the frontend's route does it, with no proxy rule; without the frontend, a proxy rule does:
 
-By default the handle is `@blog@cms.example.com`, the host of `URL`, because the actor lives on the CMS. To show `@blog@example.com` instead, set `FEDIVERSE_HANDLE_HOST=example.com` and make the site domain forward WebFinger to the CMS. Every id stays on the CMS origin (the actor, its inbox, outbox and key ids do not change), so no follower is lost.
+  ```caddyfile
+  example.com {
+      handle /.well-known/webfinger {
+          reverse_proxy https://cms.example.com {
+              header_up Host {upstream_hostport}
+          }
+      }
+      # the rest of the site as before
+  }
+  ```
 
-1. Set `URL` to the CMS's public origin. It is required with this variable: the boot stops with a message naming the variable if `URL` is missing, or if the value is not a bare host such as `example.com`.
-2. Forward `/.well-known/webfinger` on the site domain to the CMS. The frontend route that does it comes later; until then a proxy rule does:
+  ```yaml
+  # Traefik, dynamic configuration: a router on the site domain, with a higher priority than the site's
+  http:
+    routers:
+      webfinger:
+        rule: 'Host(`example.com`) && Path(`/.well-known/webfinger`)'
+        priority: 100
+        service: cms
+        tls: {}
+    services:
+      cms:
+        loadBalancer:
+          passHostHeader: false
+          servers:
+            - url: 'https://cms.example.com'
+  ```
 
-   ```caddyfile
-   example.com {
-       handle /.well-known/webfinger {
-           reverse_proxy https://cms.example.com {
-               header_up Host {upstream_hostport}
-           }
-       }
-       # the rest of the site as before
-   }
-   ```
+  Check it from outside: `npx @fedify/cli lookup @blog@example.com`.
 
-   ```yaml
-   # Traefik, dynamic configuration: a router on the site domain, with a higher priority than the site's
-   http:
-     routers:
-       webfinger:
-         rule: 'Host(`example.com`) && Path(`/.well-known/webfinger`)'
-         priority: 100
-         service: cms
-         tls: {}
-     services:
-       cms:
-         loadBalancer:
-           passHostHeader: false
-           servers:
-             - url: 'https://cms.example.com'
-   ```
-
-3. Check it from outside: `npx @fedify/cli lookup @blog@example.com`.
-
-Once set, **only the handle host resolves**: `@blog@cms.example.com` stops answering WebFinger, so searching for it finds nothing. Servers that already follow the site keep doing so, because they key the follow by the actor id. Details and the reason: [architecture/federation.md](../architecture/federation.md#changing-the-handle-without-losing-followers).
+- **The username cannot change while the actor has a follower** (`409`, `username-locked`), the actor identifier cannot change once set (`identifier-locked`), and two sites cannot share one (`identifier-taken`). All three are refused whoever edits the site: the Content Manager lets any role that can update `Site` edit the profile and the section, and the lock is the plugin's, not a permission.
 
 `URL` must be the CMS's real public origin, because activities sent in the background build their ids from it. Requirements that are easy to miss:
 

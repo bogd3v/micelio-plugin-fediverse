@@ -116,8 +116,8 @@ describe('Fediverse federation (Phase 2: article federation)', () => {
     })
 
     it('prefixes the frontend url with the locale when it is not the frontend default', async () => {
-      // Strapi's default locale is `en`; pretend the frontend serves `es` unprefixed.
-      process.env.FRONTEND_DEFAULT_LOCALE = 'es'
+      // Strapi's default locale is `en`; the site says the frontend serves `es` unprefixed.
+      await updateDefaultSite({ defaultLocale: 'es' })
       try {
         const draft = await createArticle()
         await publish(draft.documentId)
@@ -126,7 +126,7 @@ describe('Fediverse federation (Phase 2: article federation)', () => {
 
         expect(body.url).toBe(`https://blog.example.test/en/blog/${draft.slug}`)
       } finally {
-        delete process.env.FRONTEND_DEFAULT_LOCALE
+        await updateDefaultSite({ defaultLocale: 'en' })
       }
     })
 

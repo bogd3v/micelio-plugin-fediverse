@@ -14,6 +14,9 @@ export type FederationProblemCode =
   | 'follower-not-found'
   | 'not-failed'
   | 'unknown-site'
+  | 'username-locked'
+  | 'identifier-locked'
+  | 'identifier-taken'
 
 /** Fediverse interactions with one article; blocked actors do not count. */
 export interface FederationCounts {

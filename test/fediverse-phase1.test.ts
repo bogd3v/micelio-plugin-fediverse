@@ -110,6 +110,8 @@ describe('Fediverse federation (Phase 1: actor, keys, followers)', () => {
       siteDescription: 'Global bio.',
       favicon: icon.id,
     })
+    // The attribution list is the hosts of the site (it was the host of FRONTEND_URL).
+    await updateDefaultSite({ hosts: ['blog.example.test'] })
     await writeFediverseProfile({
       username: 'news_desk',
       displayName: 'The news desk',
@@ -130,6 +132,7 @@ describe('Fediverse federation (Phase 1: actor, keys, followers)', () => {
       )
     } finally {
       await writeFediverseProfile(null)
+      await updateDefaultSite({ hosts: [] })
     }
   })
 
@@ -863,7 +866,8 @@ describe('Fediverse federation (Phase 1: actor, keys, followers)', () => {
           inbox: remote.inboxUrl,
         })
 
-        await writeFediverseProfile({ username: 'news_desk', displayName: 'The news desk' })
+        // The username is locked while the actor has a follower (fediverse-username-lock.test.ts).
+        await writeFediverseProfile({ displayName: 'The news desk' })
 
         const update = await waitUntil(() =>
           remote.inboxDeliveries.find(
@@ -873,7 +877,7 @@ describe('Fediverse federation (Phase 1: actor, keys, followers)', () => {
               a.object?.name === 'The news desk'
           )
         )
-        expect(update.object?.preferredUsername).toBe('news_desk')
+        expect(update.object?.name).toBe('The news desk')
         expect(update.object?.id).toBe(update.actor)
       } finally {
         await remote.close()

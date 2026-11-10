@@ -27,6 +27,16 @@ The actor key pair of a site is generated on the first use that finds none (`get
 
 An `info` line `[fediverse] gave the default site N follower(s), N interaction(s), N federated article(s) and N actor key(s)` is written by the boot step that gives the default site what the plugin stored before the sites (`adoptDefaultSite` in `server/src/services/default-site.ts`), only when it changed something. It carries counts and nothing else: no actor id, handle or key. The rows made from the old `federatedArticles` store key are not in that count; `migrated N federated article(s) from the plugin store` reports them.
 
+The 0.7 boot step (`runCutOver` and `ensureIdentifiers` in `server/src/services/cut-over.ts`) writes these lines, with no personal data (host names and slugs are the operator's own settings, public in the actor document):
+
+- `info` `[fediverse] the default site's hosts are now <hosts>`: the hosts it pinned, once.
+- `warn` `[fediverse] FEDIVERSE_HANDLE_HOST is ignored since 0.7 …`: a later boot that still finds the variable set.
+- `info` `[fediverse] the host of FRONTEND_URL ("<host>") belongs to another site …`: the host it left out.
+- `warn` `[fediverse] the site "<slug>" has no actor: its identifier "<identifier>" is another site's …`: a site whose slug another site's actor already uses.
+- The error that stops the boot when another site holds the 0.6 handle host: `[fediverse] FEDIVERSE_HANDLE_HOST names "<host>", which another site already has as a host …` (or `URL` in place of the variable). It is thrown, not logged by the plugin, and names the variable and the host.
+
+A `warn` `[fediverse] FRONTEND_DEFAULT_LOCALE is deprecated and read only because the site has no default locale …` is written once per process by `frontendDefaultLocale` in `server/src/services/articles.ts`.
+
 ### Personal data in these lines
 
 - Remote handles (`@user@host`) and actor ids of followers appear in the fediverse lines (`server/src/federation.ts`). They describe people on other servers.

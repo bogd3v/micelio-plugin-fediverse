@@ -1,12 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { verifyJsonLd } from '@fedify/fedify'
 import { PUBLIC_COLLECTION } from '@fedify/fedify/vocab'
-import { writeFediverseProfile } from './helpers/fediverse-profile'
+import { updateDefaultSite, writeFediverseProfile } from './helpers/fediverse-profile'
 import { setupStrapi, cleanupStrapi, serverHost } from './strapi'
 import { createRemoteActor, type RemoteActor } from './helpers/remote-actor'
 import { waitUntil } from './helpers/wait-until'
 import { ActorUpdate, AttributedPerson } from '../server/src/attributed-actor'
-import { attributionDomains } from '../server/src/utils/attribution-domains'
 
 const ACTIVITY_JSON = 'application/activity+json'
 const IRI = 'http://joinmastodon.org/ns#attributionDomains'
@@ -37,38 +36,6 @@ function person(domains?: string[]): AttributedPerson {
     attributionDomains: domains,
   })
 }
-
-describe('attributionDomains', () => {
-  const savedUrl = process.env.URL
-  afterAll(() => {
-    if (savedUrl === undefined) delete process.env.URL
-    else process.env.URL = savedUrl
-  })
-
-  it('is the host of FRONTEND_URL, lowercase, without port or path', () => {
-    expect(attributionDomains({ FRONTEND_URL: 'https://Blog.Example.test:8443/es/' })).toEqual([
-      'blog.example.test',
-    ])
-  })
-
-  it('adds the handle host when it differs, once', () => {
-    process.env.URL = 'https://cms.example.test'
-    const env = { FRONTEND_URL: 'https://www.example.test', FEDIVERSE_HANDLE_HOST: 'example.test' }
-    expect(attributionDomains(env)).toEqual(['www.example.test', 'example.test'])
-    expect(
-      attributionDomains({
-        FRONTEND_URL: 'https://example.test',
-        FEDIVERSE_HANDLE_HOST: 'example.test',
-      })
-    ).toEqual(['example.test'])
-  })
-
-  it('is empty when neither variable names a domain', () => {
-    expect(attributionDomains({})).toEqual([])
-    expect(attributionDomains({ FRONTEND_URL: '  ' })).toEqual([])
-    expect(attributionDomains({ FRONTEND_URL: 'not a url' })).toEqual([])
-  })
-})
 
 describe('AttributedPerson and ActorUpdate', () => {
   it('serialize the bare key, plain strings and the term Mastodon defines', async () => {
@@ -141,10 +108,8 @@ describe('Fediverse author attribution (actor and Update(Person))', () => {
       .plugin('fediverse')
       .service('followers')
       .recordFollower(strapi, { actorId: remote.actorUrl, inbox: remote.inboxUrl })
-  })
-
-  afterEach(() => {
-    process.env.FRONTEND_URL = 'https://blog.example.test'
+    // The domains are the hosts of the site.
+    await updateDefaultSite({ hosts: ['blog.example.test'] })
   })
 
   afterAll(async () => {
@@ -152,19 +117,39 @@ describe('Fediverse author attribution (actor and Update(Person))', () => {
     await remote.close()
   })
 
-  it('lists the frontend host in the actor document, as Mastodon reads it', async () => {
+  it('lists the hosts of the site in the actor document, as Mastodon reads it', async () => {
     const actor = await readActor()
     expect(actor.attributionDomains).toEqual(['blog.example.test'])
     expect(definesTerm(actor['@context'])).toBe(true)
   })
 
-  it('serves no attributionDomains when no variable names a domain', async () => {
-    delete process.env.FRONTEND_URL
-    const actor = await readActor()
-    expect(actor).not.toHaveProperty('attributionDomains')
+  it('serves no attributionDomains when the site has no hosts', async () => {
+    await updateDefaultSite({ hosts: [] })
+    try {
+      const actor = await readActor()
+      expect(actor).not.toHaveProperty('attributionDomains')
+    } finally {
+      await updateDefaultSite({ hosts: ['blog.example.test'] })
+    }
   })
 
+  /**
+   * Waits until the actor the earlier saves left (the hosts, above) has reached the follower: an
+   * `Update(Person)` carrying them. The sends take turns, so none that is still queued can send
+   * an older actor after it.
+   */
+  async function earlierProfileUpdatesSettled(): Promise<void> {
+    await waitUntil(() =>
+      profileUpdates().some(
+        (a) =>
+          JSON.stringify((a.object as Json).attributionDomains) ===
+          JSON.stringify(['blog.example.test'])
+      )
+    )
+  }
+
   it('carries the domains in the Update(Person) sent to followers, under a valid signature', async () => {
+    await earlierProfileUpdatesSettled()
     await writeFediverseProfile({ displayName: 'Attributed blog' })
 
     const update = await waitUntil(() =>
@@ -191,17 +176,18 @@ describe('Fediverse author attribution (actor and Update(Person))', () => {
     expect(await verifyJsonLd(tampered, { documentLoader })).toBe(false)
   })
 
-  it('sends Update(Person) on a restart that changes the domain, and nothing on one that does not', async () => {
-    await cleanupStrapi({ keepDatabase: true })
-    process.env.FRONTEND_URL = 'https://news.example.test'
-    await setupStrapi({ keepDatabase: true })
+  it('sends Update(Person) when the hosts change, and nothing on a restart that changes nothing', async () => {
+    await updateDefaultSite({ hosts: ['blog.example.test', 'news.example.test'] })
 
     const update = await waitUntil(() =>
       profileUpdates().find((a) =>
-        JSON.stringify((a.object as Json).attributionDomains).includes('news.example.test')
+        JSON.stringify((a.object as Json).attributionDomains ?? []).includes('news.example.test')
       )
     )
-    expect((update.object as Json).attributionDomains).toEqual(['news.example.test'])
+    expect((update.object as Json).attributionDomains).toEqual([
+      'blog.example.test',
+      'news.example.test',
+    ])
     const sent = remote.inboxDeliveries.length
 
     await cleanupStrapi({ keepDatabase: true })

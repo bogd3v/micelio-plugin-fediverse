@@ -1,9 +1,9 @@
 import type { Core } from '@strapi/strapi'
 
 import { ACTOR_IDENTIFIER } from '../constants/actor'
+import { SECTION_ATTRIBUTE } from '../constants/site-actor'
 import { GLOBAL_UID, SITE_UID } from '../constants/uids'
 import type { ActorProfile } from '../types/actor-profile'
-import { attributionDomains } from '../utils/attribution-domains'
 import { frontendBaseUrl } from '../utils/frontend-url'
 
 const DEFAULT_NAME = 'Micelio'
@@ -31,6 +31,8 @@ interface FediverseSettings {
 }
 
 interface SiteSettings {
+  documentId?: string
+  hosts?: unknown
   name?: string | null
   description?: string | null
   fediverse?: FediverseSettings | null
@@ -58,60 +60,93 @@ function firstFilled(...values: Array<string | null | undefined>): string | null
   return null
 }
 
+/** A site as read for the profile: the row, and the identifier of its actor. */
+interface LoadedSite {
+  settings: SiteSettings
+  identifier: string
+}
+
 /**
- * Reads the default site (the row with `isDefault`) in the default locale with the component's header
- * populated: the document service does not populate media by itself.
+ * Reads a site in the default locale with the component's header populated (the document service
+ * does not populate media by itself), and the identifier of its actor: the `fediverse-actor`
+ * section's, and for the default site, until the boot step has written it,
+ * `FEDIVERSE_ACTOR_IDENTIFIER`.
+ *
+ * @param site - The site's `documentId`; the default site when omitted.
+ * @returns `null` when there is no such site or it cannot be read.
  */
-async function loadSiteSettings(strapi: Core.Strapi): Promise<SiteSettings | null> {
+async function loadSite(strapi: Core.Strapi, site?: string): Promise<LoadedSite | null> {
+  const populate = {
+    fediverse: { populate: { header: true } },
+    [SECTION_ATTRIBUTE]: true,
+  }
   try {
-    return (await strapi.documents(SITE_UID).findFirst({
-      filters: { isDefault: true },
-      populate: { fediverse: { populate: { header: true } } },
-    })) as SiteSettings | null
+    const row = (
+      site
+        ? await strapi.documents(SITE_UID).findOne({ documentId: site, populate })
+        : await strapi.documents(SITE_UID).findFirst({ filters: { isDefault: true }, populate })
+    ) as (SiteSettings & { isDefault?: boolean | null }) | null
+    if (row == null) return null
+    const section = (row as Record<string, unknown>)[SECTION_ATTRIBUTE] as
+      { identifier?: string | null } | null | undefined
+    const identifier = firstFilled(section?.identifier) ?? (row.isDefault ? ACTOR_IDENTIFIER : '')
+    return { settings: row, identifier }
   } catch (error) {
-    strapi.log.warn('[fediverse] failed to load the default site for actor profile', { error })
+    strapi.log.warn('[fediverse] failed to load the site for actor profile', { error })
     return null
   }
 }
 
-function resolveUsername(settings: SiteSettings | null): string {
-  return firstFilled(settings?.fediverse?.username, ACTOR_IDENTIFIER) ?? ''
+function resolveUsername(settings: SiteSettings | null, identifier: string): string {
+  return firstFilled(settings?.fediverse?.username, identifier) ?? ''
 }
 
 /**
- * The handle's `@user` (`preferredUsername`): the default site's `fediverse.username`, then the
- * actor identifier.
+ * The handle's `@user` (`preferredUsername`) of a site: its `fediverse.username`, then its actor
+ * identifier.
+ *
+ * @param site - The site's `documentId`; the default site when omitted.
  */
-export async function getActorUsername(strapi: Core.Strapi): Promise<string> {
-  return resolveUsername(await loadSiteSettings(strapi))
+export async function getActorUsername(strapi: Core.Strapi, site?: string): Promise<string> {
+  const loaded = await loadSite(strapi, site)
+  return resolveUsername(loaded?.settings ?? null, loaded?.identifier ?? ACTOR_IDENTIFIER)
 }
 
 /**
- * Usernames WebFinger resolves to the blog, lowercase: the current handle and, as a former
+ * Usernames WebFinger resolves to a site's actor, lowercase: the current handle and, as a former
  * handle, the identifier.
+ *
+ * @param site - The site's `documentId`; the default site when omitted.
  */
-export async function getActorUsernames(strapi: Core.Strapi): Promise<string[]> {
-  const usernames = [await getActorUsername(strapi), ACTOR_IDENTIFIER]
+export async function getActorUsernames(strapi: Core.Strapi, site?: string): Promise<string[]> {
+  const loaded = await loadSite(strapi, site)
+  const identifier = loaded?.identifier ?? (site ? '' : ACTOR_IDENTIFIER)
+  const usernames = [resolveUsername(loaded?.settings ?? null, identifier), identifier]
   return [...new Set(usernames.filter(Boolean).map((username) => username.toLowerCase()))]
 }
 
 /**
- * Resolves the blog actor's profile. The `fediverse` component of the default site wins; each
- * empty field falls back, in order, to the site's identity:
+ * Resolves the actor's profile of a site. Its `fediverse` component wins; each empty field falls
+ * back, in order, to the site's identity:
  *
- *   username ← fediverse.username → the actor identifier
+ *   username ← fediverse.username → the site's actor identifier
  *   name     ← fediverse.displayName → global.siteName → site.name → "Micelio"
  *   summary  ← fediverse.summary → global.siteDescription → site.description → none
  *   icon     ← global.favicon (resolved against the actor URL)
  *   header   ← fediverse.header (resolved against the actor URL)
  *   fields   ← Blog (FRONTEND_URL) and Código (fediverse.sourceUrl → this repository)
- *   attributionDomains ← the host of FRONTEND_URL and FEDIVERSE_HANDLE_HOST (utils/attribution-domains.ts)
+ *   attributionDomains ← every entry of the site's `hosts`
  *
  * `discoverable` is true unless the component says otherwise. `about.title` is deliberately not
- * a fallback: it's the About page heading ("Acerca de este blog"), not a name. The
- * `FEDIVERSE_ACTOR_*` variables and `global`'s `fediverseHeader` are no longer read (#307).
+ * a fallback: it's the About page heading ("Acerca de este blog"), not a name.
+ *
+ * @param site - The site's `documentId`; the default site when omitted.
  */
-export async function getActorProfile(strapi: Core.Strapi, baseUrl: string): Promise<ActorProfile> {
+export async function getActorProfile(
+  strapi: Core.Strapi,
+  baseUrl: string,
+  site?: string
+): Promise<ActorProfile> {
   let globalSettings: GlobalSettings | null = null
 
   try {
@@ -122,8 +157,8 @@ export async function getActorProfile(strapi: Core.Strapi, baseUrl: string): Pro
     strapi.log.warn('[fediverse] failed to load global settings for actor profile', { error })
   }
 
-  // The default locale, like every other read of the actor.
-  const siteSettings = await loadSiteSettings(strapi)
+  const loaded = await loadSite(strapi, site)
+  const siteSettings = loaded?.settings ?? null
   const fediverse = siteSettings?.fediverse
 
   const url = frontendHome()
@@ -136,9 +171,10 @@ export async function getActorProfile(strapi: Core.Strapi, baseUrl: string): Pro
     siteSettings?.description
   )
   const sourceUrl = firstFilled(fediverse?.sourceUrl) ?? DEFAULT_SOURCE_URL
+  const hosts = Array.isArray(siteSettings?.hosts) ? (siteSettings.hosts as unknown[]) : []
 
   return {
-    username: resolveUsername(siteSettings),
+    username: resolveUsername(siteSettings, loaded?.identifier ?? ''),
     name,
     summary,
     iconUrl: absoluteUrl(globalSettings?.favicon?.url, baseUrl),
@@ -149,7 +185,14 @@ export async function getActorProfile(strapi: Core.Strapi, baseUrl: string): Pro
       { name: 'Blog', url },
       { name: 'Código', url: sourceUrl },
     ],
-    attributionDomains: attributionDomains(),
+    attributionDomains: [
+      ...new Set(
+        hosts
+          .filter((host): host is string => typeof host === 'string')
+          .map((host) => host.toLowerCase().replace(/:\d+$/, ''))
+          .filter(Boolean)
+      ),
+    ],
   }
 }
 

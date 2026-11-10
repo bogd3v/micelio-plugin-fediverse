@@ -11,6 +11,7 @@ import {
   type InboxContext,
   type InboxListener,
   type InboxListenerSetters,
+  type RequestContext,
   type RetryPolicy,
 } from '@fedify/fedify'
 import {
@@ -44,7 +45,6 @@ import type { Context as KoaContext } from 'koa'
 
 import pkg from '../../package.json'
 import { AttributedPerson } from './attributed-actor'
-import { ACTOR_IDENTIFIER } from './constants/actor'
 import {
   ACTOR_PATH,
   ARTICLE_PATH,
@@ -55,6 +55,7 @@ import {
   NOTE_PATH,
   OUTBOX_PATH,
   SHARED_INBOX_PATH,
+  WEBFINGER_PATH,
 } from './constants/paths'
 import { ARTICLE_UID } from './constants/uids'
 import { QUEUE_STOP_TIMEOUT_MS } from './constants/queue'
@@ -66,9 +67,16 @@ import {
   findPublishedArticle,
   listPublishedArticles,
 } from './services/articles'
-import { resolveArticleId } from './services/articles'
+import { frontendDefaultLocale, resolveArticleId } from './services/articles'
 import { getObjectType } from './services/object-type'
 import { getActorProfile, getActorUsernames } from './services/actor-profile'
+import {
+  defaultIdentifier,
+  type ActorSite,
+  isSiteHost,
+  siteByHandleHost,
+  siteByIdentifier,
+} from './services/actor-sites'
 import { configuredEncryptionKey, getActorKeyPairs } from './services/keys'
 import { recordInteraction, removeInteraction } from './services/interactions'
 import { removeReply, updateReply } from './services/replies'
@@ -93,7 +101,8 @@ import { escapeHtml } from './utils/html'
 import { createFederationBackend } from './utils/federation-backend'
 import { ActorKeyDecryptionError } from './utils/key-encryption'
 import { currentObservation, ObservedMessageQueue } from './utils/observed-queue'
-import { federationOrigin } from './utils/handle-host'
+import { frontendBaseUrl } from './utils/frontend-url'
+import { publicOrigin } from './utils/public-origin'
 import { FEDERATION_SECURITY_HEADERS } from './utils/security-headers'
 import { inboxDigestRefusal } from './inbox-digest'
 import { describeDeliveryError } from './utils/delivery-error'
@@ -206,6 +215,21 @@ async function extractAvatarUrl(
   }
 }
 
+/**
+ * The actor of a site that an activity names as its object, or `null` when the id is not one of
+ * ours or no site has that identifier. The default site's when the activity names none.
+ */
+async function actorOfUri(
+  ctx: Context<FediverseContextData>,
+  id: URL | null
+): Promise<{ identifier: string; site: ActorSite } | null> {
+  if (id == null) return null
+  const parsed = ctx.parseUri(id)
+  if (parsed?.type !== 'actor') return null
+  const site = await siteByIdentifier(ctx.data.strapi, parsed.identifier)
+  return site?.identifier == null ? null : { identifier: parsed.identifier, site }
+}
+
 /** What reply handling needs, with the blog's usernames as the default site has them now. */
 async function loadReplyContext(ctx: Context<FediverseContextData>): Promise<ReplyContext> {
   return { ...replyContext(ctx), actorUsernames: await getActorUsernames(ctx.data.strapi) }
@@ -259,7 +283,8 @@ function threadFetcher(ctx: InboxContext<FediverseContextData>): ThreadFetcher {
   const strapi = ctx.data.strapi
   let signed: Promise<DocumentLoader> | undefined
   const loaderFor = async (signal: AbortSignal): Promise<DocumentLoader> => {
-    signed ??= ctx.getDocumentLoader({ identifier: ACTOR_IDENTIFIER })
+    signed ??= (async () =>
+      ctx.getDocumentLoader({ identifier: await defaultIdentifier(strapi) }))()
     const loader = await signed
     return (url, options) => loader(url, { ...options, signal })
   }
@@ -392,10 +417,13 @@ function profileField(field: ActorProfileField): PropertyValue {
  */
 export async function buildActor(
   ctx: Context<FediverseContextData>,
-  identifier: string
+  identifier: string,
+  found?: ActorSite
 ): Promise<Person> {
+  const site = found ?? (await siteByIdentifier(ctx.data.strapi, identifier))
+  if (site == null) throw new Error(`[fediverse] no site has the actor identifier "${identifier}"`)
   const actorUri = ctx.getActorUri(identifier)
-  const profile = await getActorProfile(ctx.data.strapi, actorUri.href)
+  const profile = await getActorProfile(ctx.data.strapi, actorUri.href, site.documentId)
   const keyPairs = await ctx.getActorKeyPairs(identifier)
   // Fedify turns a failing key pairs dispatcher into no keys; an actor served
   // without its key would look like a new identity to remote servers.
@@ -408,7 +436,7 @@ export async function buildActor(
 
   return new AttributedPerson({
     id: actorUri,
-    preferredUsername: identifier === ACTOR_IDENTIFIER ? profile.username : identifier,
+    preferredUsername: profile.username,
     name: profile.name,
     summary: profile.summary ?? undefined,
     url: new URL(profile.url),
@@ -517,21 +545,27 @@ export function createFediverseFederation(
 
   federation
     .setActorDispatcher(ACTOR_PATH, async (ctx, identifier) => {
-      if (identifier !== ACTOR_IDENTIFIER) return null
-      return buildActor(ctx, identifier)
+      const site = await siteByIdentifier(ctx.data.strapi, identifier)
+      return site == null ? null : buildActor(ctx, identifier, site)
     })
-    .mapHandle(async (ctx, username) =>
-      (await getActorUsernames(ctx.data.strapi)).includes(username.toLowerCase())
-        ? ACTOR_IDENTIFIER
-        : null
-    )
+    // The host of the `acct:` resource names the site (see `withHandleHost`), the username its actor.
+    .mapHandle(async (ctx, username) => {
+      // Fedify answers WebFinger with a request context, whose `url` is the one `withHandleHost` set.
+      const { url } = ctx as unknown as RequestContext<FediverseContextData>
+      const host = /^acct:[^@]+@([^@]+)$/i.exec(url.searchParams.get('resource') ?? '')?.[1]
+      const site = await siteByHandleHost(ctx.data.strapi, (host ?? url.host).toLowerCase())
+      if (site?.identifier == null) return null
+      const usernames = await getActorUsernames(ctx.data.strapi, site.documentId)
+      return usernames.includes(username.toLowerCase()) ? site.identifier : null
+    })
     .setKeyPairsDispatcher(async (context, identifier) => {
-      if (identifier !== ACTOR_IDENTIFIER) return []
+      const site = await siteByIdentifier(context.data.strapi, identifier)
+      if (site == null) return []
       // Keys are persisted as JWKs in the plugin store; Fedify derives the
       // key ids (`#main-key`) from the current request origin. Fedify logs a
       // dispatcher error only as "no dispatcher registered", so log the cause.
       try {
-        return await getActorKeyPairs(context.data.strapi)
+        return await getActorKeyPairs(context.data.strapi, site.documentId)
       } catch (error) {
         logKeyPairsFailure(context.data.strapi, error)
         throw error
@@ -540,11 +574,12 @@ export function createFediverseFederation(
 
   federation
     .setFollowersDispatcher(FOLLOWERS_PATH, async (ctx, identifier, cursor) => {
-      if (identifier !== ACTOR_IDENTIFIER) return null
+      const site = await siteByIdentifier(ctx.data.strapi, identifier)
+      if (site == null) return null
       // Single page: all non-blocked followers, no pagination cursor.
       if (cursor != null) return { items: [] }
 
-      const followers = await listFollowers(ctx.data.strapi)
+      const followers = await listFollowers(ctx.data.strapi, { site: site.documentId })
       return {
         items: followers.map((follower) => ({
           id: new URL(follower.actorId),
@@ -553,14 +588,17 @@ export function createFediverseFederation(
       }
     })
     .setCounter(async (ctx, identifier) => {
-      if (identifier !== ACTOR_IDENTIFIER) return null
-      return await countFollowers(ctx.data.strapi)
+      const site = await siteByIdentifier(ctx.data.strapi, identifier)
+      if (site == null) return null
+      return await countFollowers(ctx.data.strapi, { site: site.documentId })
     })
 
   // A moderator's reply: served only while it is shown (a removed one is a 404, as its Tombstone says).
   federation.setObjectDispatcher(Note, NOTE_PATH, async (ctx, values) => {
     const served = await findServedReply(ctx.data.strapi, values.documentId)
-    return served == null ? null : buildNote(ctx, ACTOR_IDENTIFIER, served.comment, served.target)
+    return served == null
+      ? null
+      : buildNote(ctx, await defaultIdentifier(ctx.data.strapi), served.comment, served.target)
   })
 
   // Keyed by `Article` for the route and the id; the object is a `Note` when the site chose that.
@@ -570,13 +608,22 @@ export function createFediverseFederation(
     async (ctx, values) => {
       const record = await findPublishedArticle(ctx.data.strapi, values.documentId)
       if (record == null) return null
-      return buildArticle(ctx, ACTOR_IDENTIFIER, record, await getObjectType(ctx.data.strapi))
+      return buildArticle(
+        ctx,
+        await defaultIdentifier(ctx.data.strapi),
+        record,
+        await getObjectType(ctx.data.strapi),
+        await frontendDefaultLocale(ctx.data.strapi)
+      )
     }
   )
 
   federation
     .setOutboxDispatcher(OUTBOX_PATH, async (ctx, identifier, cursor) => {
-      if (identifier !== ACTOR_IDENTIFIER) return null
+      const site = await siteByIdentifier(ctx.data.strapi, identifier)
+      if (site == null) return null
+      // The articles belong to the default site's actor; another site's outbox is empty.
+      if (!site.isDefault) return { items: [], nextCursor: null }
 
       const start = Math.min(
         Math.max(0, Number.parseInt(cursor ?? '0', 10) || 0),
@@ -588,15 +635,18 @@ export function createFediverseFederation(
       })
       const next = start + OUTBOX_PAGE_SIZE
       const objectType = await getObjectType(ctx.data.strapi)
+      const defaultLocale = await frontendDefaultLocale(ctx.data.strapi)
       return {
         items: items.map((record) =>
-          buildArticleActivity('create', ctx, identifier, record, objectType)
+          buildArticleActivity('create', ctx, identifier, record, objectType, defaultLocale)
         ),
         nextCursor: next < total ? String(next) : null,
       }
     })
     .setCounter(async (ctx, identifier) => {
-      if (identifier !== ACTOR_IDENTIFIER) return null
+      const site = await siteByIdentifier(ctx.data.strapi, identifier)
+      if (site == null) return null
+      if (!site.isDefault) return 0
       const { total } = await listPublishedArticles(ctx.data.strapi, { start: 0, limit: 1 })
       return total
     })
@@ -639,10 +689,11 @@ export function createFediverseFederation(
       const actorId = follow.actorId
       if (actorId == null) return
 
-      // Only accept follows addressed to the blog actor (relevant for the
+      // Only accept follows addressed to the actor of a site (relevant for the
       // shared inbox, which receives activities for any recipient).
       const targetId = follow.objectId?.href
-      if (targetId !== ctx.getActorUri(ACTOR_IDENTIFIER).href) {
+      const target = await actorOfUri(ctx, follow.objectId)
+      if (target == null) {
         strapi.log.warn(`[fediverse] ignoring Follow addressed at ${targetId ?? '(none)'}`)
         return
       }
@@ -669,13 +720,17 @@ export function createFediverseFederation(
 
       const avatar = await extractAvatarUrl(strapi, remoteActor, ctx.documentLoader)
 
-      const follower = await recordFollower(strapi, {
-        actorId: actorId.href,
-        handle,
-        name,
-        inbox: remoteActor?.inboxId?.href ?? null,
-        avatar,
-      })
+      const follower = await recordFollower(
+        strapi,
+        {
+          actorId: actorId.href,
+          handle,
+          name,
+          inbox: remoteActor?.inboxId?.href ?? null,
+          avatar,
+        },
+        target.site.documentId
+      )
 
       // A blocked actor gets no answer at all: an Accept would show the follow as
       // accepted on its server, and a Reject would tell it that it is blocked.
@@ -692,10 +747,10 @@ export function createFediverseFederation(
 
       // Answer with a signed Accept so the remote server completes the follow.
       await ctx.sendActivity(
-        { identifier: ACTOR_IDENTIFIER },
+        { identifier: target.identifier },
         remoteActor,
         new Accept({
-          actor: ctx.getActorUri(ACTOR_IDENTIFIER),
+          actor: ctx.getActorUri(target.identifier),
           object: follow,
           to: actorId,
         })
@@ -724,7 +779,8 @@ export function createFediverseFederation(
       }
 
       if (undone instanceof Follow) {
-        const removed = await removeFollower(strapi, undone.actorId!.href)
+        const target = await actorOfUri(ctx, undone.objectId)
+        const removed = await removeFollower(strapi, undone.actorId!.href, target?.site.documentId)
         if (removed) {
           strapi.log.info(`[fediverse] unfollowed: ${undone.actorId!.href}`)
         }
@@ -765,7 +821,8 @@ export function createFediverseFederation(
       if (block.actorId == null) return
 
       // A remote actor blocking us implies they no longer follow us.
-      const removed = await removeFollower(strapi, block.actorId.href)
+      const target = await actorOfUri(ctx, block.objectId)
+      const removed = await removeFollower(strapi, block.actorId.href, target?.site.documentId)
       if (removed) {
         strapi.log.info(`[fediverse] removed follower after Block from ${block.actorId.href}`)
       }
@@ -878,7 +935,7 @@ function handleOf(strapi: Core.Strapi): FederationHandle {
       backend,
       federation: createFediverseFederation({
         log: strapi.log,
-        origin: federationOrigin(),
+        origin: publicOrigin(),
         backend,
         encryptionKey: () => configuredEncryptionKey(strapi),
         settle: (observation) => settleDelivery(strapi, observation),
@@ -991,6 +1048,53 @@ function requestGuardKind(method: string, path: string): RequestGuardKind {
 }
 
 /**
+ * Answers the WebFinger request for a handle on one of the hosts of a site, or returns `false`
+ * and leaves the request to Fedify.
+ *
+ * @remarks
+ * Fedify resolves an `acct:` resource only on the request's own host and on the one handle host it
+ * was created with, and the hosts of a site change at runtime. So when the host of the resource is
+ * one of the hosts of a site, the plugin writes the (small) JRD itself: the subject as asked, the
+ * actor as `self` and the frontend as the profile page. The ids still come from `URL`.
+ */
+async function answerSiteWebFinger(strapi: Core.Strapi, ctx: KoaContext): Promise<boolean> {
+  if (ctx.method !== 'GET' || routedPath(ctx) !== WEBFINGER_PATH) return false
+  const resource = ctx.query.resource
+  const match = typeof resource === 'string' ? /^acct:([^@]+)@([^@]+)$/i.exec(resource) : null
+  if (!match || !(await isSiteHost(strapi, match[2]))) return false
+
+  const host = match[2].toLowerCase()
+  const site = await siteByHandleHost(strapi, host)
+  const usernames = site ? await getActorUsernames(strapi, site.documentId) : []
+  if (site?.identifier == null || !usernames.includes(match[1].toLowerCase())) {
+    ctx.status = 404
+    ctx.type = 'text/plain'
+    ctx.body = 'Not found'
+    return true
+  }
+  const origin = publicOrigin() ?? `${ctx.protocol}://${ctx.host}`
+  const actor = new URL(
+    ACTOR_PATH.replace('{identifier}', encodeURIComponent(site.identifier)),
+    origin
+  )
+  ctx.status = 200
+  ctx.set('Access-Control-Allow-Origin', '*')
+  ctx.type = 'application/jrd+json'
+  ctx.body = {
+    subject: `acct:${match[1]}@${host}`,
+    aliases: [actor.href],
+    links: [
+      { rel: 'self', href: actor.href, type: 'application/activity+json' },
+      {
+        rel: 'http://webfinger.net/rel/profile-page',
+        href: new URL(frontendBaseUrl()).href,
+      },
+    ],
+  }
+  return true
+}
+
+/**
  * Koa middleware that hands federation paths to Fedify and passes every other
  * request on untouched.
  *
@@ -1061,6 +1165,7 @@ export function mountFediverseMiddleware(
       return
     }
     try {
+      if (await answerSiteWebFinger(strapi, ctx)) return
       await fedify(ctx, next)
     } catch (error) {
       // Koa would print every such 500 with its stack, and the cause is already

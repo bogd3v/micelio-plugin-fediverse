@@ -23,3 +23,6 @@ export const NOTE_PATH = '/fediverse/notes/{documentId}'
 
 /** Everything Fedify can answer lives under these prefixes. */
 export const FEDERATION_PREFIXES = ['/fediverse/', '/.well-known/', '/nodeinfo/']
+
+/** Path of the WebFinger document, which the host of an `acct:` resource is resolved on. */
+export const WEBFINGER_PATH = '/.well-known/webfinger'
