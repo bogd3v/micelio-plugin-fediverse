@@ -115,6 +115,22 @@ export function activityTypeFor(row: FederatedArticleRow | null): 'Create' | 'Up
   return 'Update'
 }
 
+/**
+ * The `documentId` of every site that has a row for the article. An article of a site-scoped type
+ * is sent for its own site, and a delete event does not say which one.
+ */
+export async function findFederatedSites(
+  strapi: Core.Strapi,
+  articleDocumentId: string
+): Promise<string[]> {
+  const rows = (await query(strapi).findMany({
+    where: { articleDocumentId },
+    populate: { site: { select: ['documentId'] } },
+  })) as Array<{ site?: { documentId?: string } | null }>
+  const sites = rows.map((row) => row.site?.documentId)
+  return [...new Set(sites.filter((site): site is string => typeof site === 'string'))]
+}
+
 /** Whether the article has been sent and not retracted, so a re-publish becomes an `Update`. */
 export async function isFederated(
   strapi: Core.Strapi,

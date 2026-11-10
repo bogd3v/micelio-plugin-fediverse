@@ -101,13 +101,20 @@ let instance: Core.Strapi | undefined
  * @param options.keepDatabase - Boots on the database a previous `cleanupStrapi()` left, to
  * test a restart. On SQLite the previous `cleanupStrapi({ keepDatabase: true })` must have kept the
  * file; a plain `cleanupStrapi()` deletes it.
+ * @param options.editorialArticle - Boots with `api::article.article` made with `withEditorial` of the
+ * core (test/app/src/api/article/content-types/article/schema.js), as a host that moved it to the
+ * editorial workflow. Unset, the article keeps the schema of its `base.json`.
  */
-async function setupStrapi({ keepDatabase = false }: { keepDatabase?: boolean } = {}) {
+async function setupStrapi({
+  keepDatabase = false,
+  editorialArticle = false,
+}: { keepDatabase?: boolean; editorialArticle?: boolean } = {}) {
   if (instance) {
     return instance
   }
 
   setupEnvironment()
+  process.env.FEDIVERSE_TEST_EDITORIAL_ARTICLE = editorialArticle ? 'true' : 'false'
 
   // Start from an empty database
   if (keepDatabase) {
