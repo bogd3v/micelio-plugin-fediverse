@@ -19,6 +19,7 @@ import { getObjectType } from './object-type'
 import {
   activityTypeFor,
   findFederatedArticle,
+  findFederatedSites,
   isFederated,
   recordFailure,
   recordSend,
@@ -32,10 +33,20 @@ interface EntryEvent {
   entry?: { documentId?: string; locale?: string | null } | null
 }
 
+/** What the core's `afterPublish` and `afterUnpublish` hooks hand a handler (`docs/hooks.md` of the core). */
+interface EntryHookPayload {
+  /** The `documentId` of the entry's site; `null` for a type without site scope. */
+  site: string | null
+  type: string
+  documentId: string
+  locale: string | null
+}
+
 /** How long a save in a non-default locale waits for i18n to copy the shared fields. */
 const LOCALE_SYNC_DELAY_MS = 1000
 
 let unsubscribers: Array<() => void> = []
+let hookUnsubscribers: Array<() => void> = []
 
 /**
  * Fedify context for work that isn't tied to an HTTP request. Its origin comes
@@ -226,16 +237,24 @@ export async function retryFailedDelivery(
     : { status: 'not-federable' }
 }
 
-async function onPublish(strapi: Core.Strapi, event: EntryEvent): Promise<void> {
-  const documentId = event.entry?.documentId
-  if (!documentId || !(await isDefaultLocale(strapi, event))) return
-
-  const outcome = await federateArticle(strapi, documentId)
+/** Federates the published version of an article and warns when there is nothing to federate. */
+async function publishArticle(
+  strapi: Core.Strapi,
+  documentId: string,
+  site?: string
+): Promise<void> {
+  const outcome = await federateArticle(strapi, documentId, site)
   if (outcome.status === 'not-federable') {
     strapi.log.warn(
       `[fediverse] not federating article ${documentId}: no published default-locale version with a title and slug`
     )
   }
+}
+
+async function onPublish(strapi: Core.Strapi, event: EntryEvent): Promise<void> {
+  const documentId = event.entry?.documentId
+  if (!documentId || !(await isDefaultLocale(strapi, event))) return
+  await publishArticle(strapi, documentId)
 }
 
 /**
@@ -249,10 +268,13 @@ async function onSiteSettingsChanged(strapi: Core.Strapi, event: EntryEvent): Pr
   await onProfileChanged(strapi)
 }
 
-async function onRemoved(strapi: Core.Strapi, event: EntryEvent): Promise<void> {
-  const documentId = event.entry?.documentId
-  if (!documentId || !(await isDefaultLocale(strapi, event))) return
-  if (!(await isFederated(strapi, documentId))) return
+/** Sends a `Delete` for an article that was federated and has no published version left. */
+async function retractArticle(
+  strapi: Core.Strapi,
+  documentId: string,
+  site?: string
+): Promise<void> {
+  if (!(await isFederated(strapi, documentId, site))) return
 
   // Deleting a draft-only revision must not retract a version that is still live.
   if ((await findPublishedArticle(strapi, documentId)) != null) return
@@ -262,9 +284,52 @@ async function onRemoved(strapi: Core.Strapi, event: EntryEvent): Promise<void> 
     strapi,
     documentId,
     'Delete',
-    buildDeleteActivity(ctx, ACTOR_IDENTIFIER, documentId)
+    buildDeleteActivity(ctx, ACTOR_IDENTIFIER, documentId),
+    undefined,
+    site
   )
   strapi.log.info(`[fediverse] Delete(Article) for ${documentId}: ${describeFanOut(fanOut)}`)
+}
+
+/** The retractions in progress, by `documentId`: see `onRemoved`. */
+const removing = new Map<string, Promise<void>>()
+
+async function onRemoved(strapi: Core.Strapi, event: EntryEvent): Promise<void> {
+  const documentId = event.entry?.documentId
+  if (!documentId || !(await isDefaultLocale(strapi, event))) return
+  // Strapi emits `entry.delete` once per stored version of the document (the draft and the
+  // published one), at once: the second waits for the first, whose row then says `deleted`.
+  const running = removing.get(documentId)
+  if (running != null) {
+    await running
+    return
+  }
+  const retraction = (async () => {
+    // The event names no site, and an article of a site-scoped type was sent for its own:
+    // retract it from every site that has a row for it (the default site's, for an unscoped type).
+    for (const site of await findFederatedSites(strapi, documentId)) {
+      await retractArticle(strapi, documentId, site)
+    }
+  })()
+  removing.set(documentId, retraction)
+  try {
+    await retraction
+  } finally {
+    removing.delete(documentId)
+  }
+}
+
+/**
+ * Whether a content type was made with `withEditorial` of the core, which marks it in its
+ * `pluginOptions`. Its entries are published and unpublished only through the core's transitions,
+ * which run the hooks this plugin listens to.
+ */
+function hasEditorial(strapi: Core.Strapi, uid: string): boolean {
+  const options = (
+    strapi.contentType(uid as never) as
+      { pluginOptions?: { micelio?: { editorial?: unknown } } } | undefined
+  )?.pluginOptions
+  return options?.micelio?.editorial === true
 }
 
 const PROFILE_FINGERPRINT_KEY = 'profileFingerprint'
@@ -318,19 +383,78 @@ export async function syncProfileAtBoot(strapi: Core.Strapi): Promise<void> {
 }
 
 /**
+ * Federates the articles of the core's editorial workflow from its `afterPublish` and
+ * `afterUnpublish` hooks (ADR-0017, section 5), keyed by the site of the payload.
+ *
+ * @remarks
+ * Called from `register()`: the core's `hooks` service exists from the start, whatever the order
+ * of the plugins. `afterPublish` also fires for a republish (`published → published`); that is an
+ * `Update`, because `federateArticle` decides `Create` or `Update` from the article's row, so
+ * running it again for the same `documentId` and `locale` leaves one row. A type without the
+ * `editorial` component never reaches these hooks and is federated from `strapi.eventHub`
+ * instead (see `subscribe`). A handler that throws is logged and swallowed, so it cannot undo the
+ * publish, as in `subscribe`.
+ */
+export function subscribeHooks(strapi: Core.Strapi): void {
+  const hooks = strapi.plugin('micelio').service('hooks')
+  const guarded =
+    (label: string, handler: (strapi: Core.Strapi, payload: EntryHookPayload) => Promise<void>) =>
+    async (payload: EntryHookPayload): Promise<void> => {
+      // The core fires these hooks only for a type made with `withEditorial`; checked here too, so
+      // the one-trigger-per-type rule does not rest on that alone (see `subscribe`).
+      if (payload?.type !== ARTICLE_UID || !hasEditorial(strapi, payload.type)) return
+      try {
+        if (!(await isDefaultLocale(strapi, { entry: { locale: payload.locale } }))) return
+        await handler(strapi, payload)
+      } catch (error) {
+        strapi.log.error(`[fediverse] ${label} failed`, { error })
+      }
+    }
+
+  hookUnsubscribers = [
+    hooks.on(
+      'afterPublish',
+      guarded('afterPublish federation', (s, { documentId, site }) =>
+        publishArticle(s, documentId, site ?? undefined)
+      )
+    ),
+    hooks.on(
+      'afterUnpublish',
+      guarded('afterUnpublish federation', (s, { documentId, site }) =>
+        retractArticle(s, documentId, site ?? undefined)
+      )
+    ),
+  ]
+}
+
+/** Stops federating from the core's hooks; called by the plugin's `destroy()`. */
+export function unsubscribeHooks(): void {
+  for (const off of hookUnsubscribers) off()
+  hookUnsubscribers = []
+}
+
+/**
  * Federates article publish state changes and profile edits. Failures are logged and swallowed:
  * the events fire after the Strapi operation has committed, and federation
  * problems must never surface as editor-facing errors.
+ *
+ * @remarks
+ * `entry.publish` and `entry.unpublish` are listened to for a type without the `editorial`
+ * component only: one made with `withEditorial` is federated from the core's hooks
+ * (`subscribeHooks`), so an article has exactly one trigger. `entry.delete` is listened to for
+ * every type, because the hooks have no delete.
  */
 export function subscribe(strapi: Core.Strapi): void {
   const guarded =
     (
       uid: string,
       label: string,
-      handler: (strapi: Core.Strapi, event: EntryEvent) => Promise<void>
+      handler: (strapi: Core.Strapi, event: EntryEvent) => Promise<void>,
+      { withoutEditorial = false }: { withoutEditorial?: boolean } = {}
     ) =>
     async (event: EntryEvent): Promise<void> => {
       if (event?.uid !== uid) return
+      if (withoutEditorial && hasEditorial(strapi, uid)) return
       try {
         await handler(strapi, event)
       } catch (error) {
@@ -341,11 +465,11 @@ export function subscribe(strapi: Core.Strapi): void {
   unsubscribers = [
     strapi.eventHub.on(
       'entry.publish',
-      guarded(ARTICLE_UID, 'article publish federation', onPublish)
+      guarded(ARTICLE_UID, 'article publish federation', onPublish, { withoutEditorial: true })
     ),
     strapi.eventHub.on(
       'entry.unpublish',
-      guarded(ARTICLE_UID, 'article unpublish federation', onRemoved)
+      guarded(ARTICLE_UID, 'article unpublish federation', onRemoved, { withoutEditorial: true })
     ),
     strapi.eventHub.on(
       'entry.delete',

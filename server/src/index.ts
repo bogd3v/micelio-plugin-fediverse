@@ -26,8 +26,10 @@ import { subscribeReplies, unsubscribeReplies } from './services/reply-publisher
 import statsService from './services/stats'
 import {
   subscribe as subscribePublisher,
+  subscribeHooks as subscribePublisherHooks,
   syncProfileAtBoot,
   unsubscribe as unsubscribePublisher,
+  unsubscribeHooks as unsubscribePublisherHooks,
 } from './services/publisher'
 import { configureFedifyLogging, resetFedifyLogging } from './utils/fedify-logging'
 import { assertNoRemovedActorVariables } from './utils/removed-variables'
@@ -63,6 +65,8 @@ const plugin = {
       .on('siteCreated', (payload: { site: string; isDefault: boolean }) =>
         onSiteCreated(strapi, payload)
       )
+    // Articles of the editorial workflow are federated from the hooks of the core (ADR-0017, section 5).
+    subscribePublisherHooks(strapi)
   },
 
   async bootstrap({ strapi }: { strapi: Core.Strapi }): Promise<void> {
@@ -86,6 +90,7 @@ const plugin = {
     stopSiteCreated = undefined
     unsubscribe()
     unsubscribePublisher()
+    unsubscribePublisherHooks()
     unsubscribeReplies()
     await stopFederation(strapi)
     resetFedifyLogging(strapi.log)

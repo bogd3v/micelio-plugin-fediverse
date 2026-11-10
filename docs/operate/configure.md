@@ -117,6 +117,22 @@ Once set, **only the handle host resolves**: `@blog@cms.example.com` stops answe
 
 With more than one site, each has its own followers, interactions, federation state and actor key. This release serves the default site's actor; the Fediverse page and the panel of an article take `?site=<slug>` to show another site's state ([api.md](../api.md#which-site)).
 
+## Move the article to the editorial workflow without a double send
+
+The plugin federates an article from one trigger, chosen by the content type:
+
+- `api::article.article` **without** the `editorial` component: the Document Service events `entry.publish` and `entry.unpublish` on `strapi.eventHub`.
+- `api::article.article` **made with `withEditorial`** of `@micelio/strapi-plugin-core`: the core's `afterPublish` and `afterUnpublish` hooks, which fire when an article moves through `POST /micelio/transitions`. The plugin ignores `entry.publish` and `entry.unpublish` for that type.
+- `entry.delete` is listened to for both: the hooks have no delete.
+
+The plugin reads which one applies from the type's schema at each event, so there is no variable to set. To move the article, in the host:
+
+1. Wrap the schema: `withSiteScope(withEditorial(schema))` (a `schema.js` or `schema.ts` in `content-types/article/`; `test/app/src/api/article/content-types/article/schema.js` in this repository is an example). The order of the update does not matter: a version of the plugin without the hooks still federates the editorial article from `entry.publish` and `entry.unpublish`, because the core's transitions publish with the Document Service, but for the default site only; it does not use the site of the entry.
+2. Publish and unpublish from then on only with the transitions (`in_review → published`, `published → published` to put an edit live, `published → draft` to take it down). The core refuses any other route for that type, the Content Manager included, so nothing publishes through the event hub.
+3. An article is sent once either way: do not call `federateArticle`, or publish through the Document Service in a script, as a second trigger.
+
+A `Create`, `Update` or `Delete` is the same whichever trigger sends it, and publishing returns once the activity is queued: the article's state says `created`, `updated` or `deleted`, never "delivered" ([architecture/federation.md](../architecture/federation.md#delivery-retries-and-what-the-row-says)).
+
 ## Fediverse page
 
 The admin menu has a **Fediverse** entry (diagnostics, followers, failed deliveries). It appears only for a role that has the permission **Read the Fediverse page** (`plugin::fediverse.read`); blocking, unblocking and retrying need **Block and unblock followers, and retry failed deliveries** (`plugin::fediverse.manage`). The super admin has both. Give them to the other roles in Settings → Administration Panel → Roles, under Plugins. They exist only while `FEDIVERSE_ENABLED=true`, so with federation off nobody sees the entry. **Turning federation off and on again removes the grants:** Strapi deletes the permissions of an action that is not registered from every role at boot, so after enabling it again only the super admin has them and the other roles must be given them again. Opening the page makes the CMS request its own WebFinger address (`URL`), once per visit.
