@@ -3,7 +3,7 @@ module.exports = ({ env }) => ({
   port: env.int('PORT', 0),
   // Behind a TLS-terminating proxy, ActivityPub URLs need `ctx.protocol` to follow the forwarded one.
   proxy: { koa: env.bool('TRUST_PROXY_PROTOCOL', true) },
-  // Fan-out runs outside any request and builds every activity id from it (docs/FEDIVERSE.md).
+  // Fan-out runs outside any request and builds every activity id from it (docs/architecture/federation.md).
   url: env('URL', 'http://localhost:1337'),
   app: { keys: env.array('APP_KEYS') },
   // No update check against the npm registry (Strapi still creates .strapi-updater.json).

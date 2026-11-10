@@ -9,7 +9,7 @@ import { handleHost } from './handle-host'
  * Mastodon compares them with the host of a shared page's canonical URL and its parent domains,
  * so `example.com` also credits `www.example.com`. `FRONTEND_URL` is read as set, not through
  * `frontendBaseUrl`: its development default (`localhost`) is no site's domain, and with both
- * variables unset the list is empty. See "Author attribution" in `docs/FEDIVERSE.md`.
+ * variables unset the list is empty. See "Author attribution" in `docs/architecture/federation.md`.
  *
  * @throws `Error` as {@link handleHost} does; the plugin's `register()` already stopped the boot then.
  */

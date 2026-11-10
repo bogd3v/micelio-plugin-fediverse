@@ -2,7 +2,7 @@
  * Guards the coupling between the plugin's `Signature-Input` parser and
  * Fedify's: both must load the same copy of `structured-field-values`, or the
  * pre-Fedify check could read a header differently from the verifier. See
- * `docs/FEDIVERSE.md`, "RFC 9421 signatures must cover `content-digest`".
+ * `docs/architecture/federation.md`, "RFC 9421 signatures must cover `content-digest`".
  */
 import { describe, it, expect } from 'vitest'
 import { readFileSync, realpathSync } from 'node:fs'

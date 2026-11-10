@@ -244,8 +244,8 @@ export async function listFollowerRows(
  *
  * @remarks
  * Acts on every row of the actor, not on the one row: duplicate rows are possible
- * (risk 8 in `docs/FEDIVERSE.md`) and an actor with any blocked row counts as blocked, so
- * unblocking one row of two would leave it blocked. Unblocking keeps the row: the actor is an
+ * (risk 8 in `docs/architecture/federation.md`) and an actor with any blocked row counts as
+ * blocked, so unblocking one row of two would leave it blocked. Unblocking keeps the row: the actor is an
  * active follower again, as if the admin had cleared the flag in the content manager.
  *
  * @returns `false` when there is no such row.

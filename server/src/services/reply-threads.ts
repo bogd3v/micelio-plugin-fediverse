@@ -43,8 +43,8 @@ type AttachResult =
  * moderator's note. A chain that gets there is stored from the top down, every
  * note as a `PENDING` comment nested under the one above it; a chain that does
  * not is dropped whole. A note by a blocked actor stops the branch at that
- * note: the ones above it stay stored. See `docs/FEDIVERSE.md`, "Threads deeper
- * than one hop".
+ * note: the ones above it stay stored. See `docs/architecture/federation.md`, "Threads
+ * deeper than one hop".
  *
  * @returns The outcome for the delivered reply.
  */
