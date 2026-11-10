@@ -1,0 +1,113 @@
+---
+name: strapi-fediverse
+description: Use when working on the ActivityPub/fediverse federation of Micelio in this package — the plugin under server/src and admin/src, Fedify, followers, article federation, replies as comments, likes/boosts, the stats endpoint, FEDIVERSE_* env vars, or testing federation locally and against a real instance.
+---
+
+# Strapi Fediverse Skill
+
+This package is an ActivityPub actor (`@blog@<api domain>`) served by a Strapi plugin built on **Fedify**. Read `docs/architecture/federation.md` first: it is the architecture document and records the findings behind every non-obvious decision. This skill is the quick map. What the host provides (the comments extension, the middlewares that hide unapproved comments, `proxy: { koa: true }`, the admin registration) is the host's: `docs/operate/configure.md`, "What the host provides".
+
+## When to use this skill
+
+- Changing anything under `server/src/`, `admin/src/` or `test/`, or the minimal host of the suites in `test/app/` (its comments extension and middlewares).
+- Adding an activity type, a dispatcher, or a public route for federation.
+- Debugging "the post never reached Mastodon", missing followers, or wrong URLs in activities.
+- Enabling or configuring federation in an environment.
+
+## Where things are
+
+| Path (under `server/src/`)                                                                                                                                   | Responsibility                                                                                                                                                                                                                         |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `index.ts`                                                                                                                                                   | Plugin entry: mounts the Fedify middleware in `register()`, subscribes the publisher in `bootstrap()`                                                                                                                                  |
+| `server/src/federation.ts`                                                                                                                                   | Fedify `Federation`: actor, keys, followers, outbox, article object, NodeInfo dispatchers + inbox listeners                                                                                                                            |
+| `server/src/services/articles.ts`, `server/src/services/object-type.ts`                                                                                      | Loads published default-locale articles, builds the object (`Article` or `Note`, the default site's `fediverse.objectType`) and `Create`/`Update`/`Delete`, frontend URLs                                                              |
+| `server/src/services/federated-articles.ts`                                                                                                                  | `plugin::fediverse.federated-article` rows: what was last sent per article, failures, migration of the old store key                                                                                                                   |
+| `server/src/services/publisher.ts`                                                                                                                           | `entry.publish/unpublish/delete` → records the row, then queues the activity for every reachable follower                                                                                                                              |
+| `server/src/services/reply-notes.ts`, `server/src/services/reply-publisher.ts`                                                                               | A moderator's reply to a fediverse comment becomes a `Note` (`/fediverse/notes/<documentId>`, never renamed): lifecycle hook on the comments model, `Create`/`Update`/`Delete(Note)`, admin comments only                              |
+| `server/src/controllers/federation.ts`, `server/src/services/federation-panel.ts`                                                                            | Admin routes of the article panel (`/fediverse-panel/articles/:documentId/federation` and `/federate`), permissions through Content Manager's checker, problem details                                                                 |
+| `server/src/controllers/plugin-page.ts`, `server/src/services/diagnostics.ts`, `server/src/services/inbox-refusals.ts`, `server/src/services/permissions.ts` | The Fediverse page: diagnostics, followers (block/unblock), failed deliveries (retry); plugin permissions `plugin::fediverse.read` and `.manage`                                                                                       |
+| `admin/src/`                                                                                                                                                 | The panel in the article edit view (side panel API) and the Fediverse page; registered by the host's root admin app (`registerFederationPanel`, `registerFediversePage`), pure logic in `state.ts`                                     |
+| `server/src/services/delivery-outcomes.ts`                                                                                                                   | What a queued delivery left behind → row (`attempts`, `lastError`, `failed`) and `follower.unreachableSince`                                                                                                                           |
+| `server/src/utils/federation-backend.ts`, `server/src/utils/observed-queue.ts`                                                                               | Fedify's KV and queue (PostgreSQL tables, or memory on SQLite); the queue wrapper that encrypts the actor key in messages and observes each delivery                                                                                   |
+| `server/src/services/replies.ts`                                                                                                                             | `Create/Update/Delete(Note)` → moderated comments; HTML → plain text                                                                                                                                                                   |
+| `server/src/services/interactions.ts`                                                                                                                        | Likes/boosts, dedupe, counts                                                                                                                                                                                                           |
+| `server/src/services/followers.ts`, `server/src/services/keys.ts`, `server/src/services/actor-profile.ts`                                                    | Follower rows, persisted actor key pair, actor username/name/bio/header/fields from the default site's `fediverse` component (then `global`'s name and description, and the default site's `name`/`description`), avatar from `global` |
+| `server/src/services/stats.ts`                                                                                                                               | Batch counts and ranking as aggregate SQL (likes, boosts, approved fediverse replies)                                                                                                                                                  |
+| `server/src/controllers/stats.ts`, `routes/`                                                                                                                 | `GET /api/fediverse/articles/:documentId/stats`, `/articles/stats`, `/articles/ranking`                                                                                                                                                |
+
+Outside the plugin, the host provides the comments extension (adds `fediverseUri`, `fediverseActorHandle`, `fediverseNoteUri`, `fediverseNoteRetracted`) and the middlewares that hide unapproved comments; `test/app/src/extensions/comments/strapi-server.js` and `test/app/src/middlewares/` are the minimal ones.
+
+The plugin is its own TypeScript project (`server/tsconfig.json`) bundled by esbuild (`npm run build` writes `dist/strapi-server.js`). `npm test` builds first (`test/global-setup.ts`); after editing server code, rebuild before running a single suite with `npx vitest run`.
+
+## Environment variables
+
+| Variable                                           | Default                                                   | Notes                                                                                                                                                           |
+| -------------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FEDIVERSE_ENABLED`                                | `false`                                                   | Master switch, read at boot by the host's `config/plugins.ts`. Off = no routes, no content types                                                                |
+| `URL`                                              | `http://localhost:1337`                                   | Strapi's public origin. Activity ids built outside a request come from it: keep it right                                                                        |
+| `FEDIVERSE_ACTOR_USERNAME`                         | unset                                                     | Removed (bogd3v/micelio-cms#307): a boot with it set stops, naming the default site's `fediverse.username`. The handle is that setting, else the identifier     |
+| `FEDIVERSE_HANDLE_HOST`                            | unset                                                     | Host of the handle when it is not the CMS host (bogd3v/micelio-cms#298): `origin: { handleHost, webOrigin }`; only that host resolves in WebFinger; needs `URL` |
+| `FEDIVERSE_ACTOR_IDENTIFIER`                       | required                                                  | Path of the actor URI. Never change it: remote follows are keyed by the URI                                                                                     |
+| `FEDIVERSE_ACTOR_NAME` / `FEDIVERSE_ACTOR_SUMMARY` | unset                                                     | Removed (bogd3v/micelio-cms#307): a boot with either set stops, naming `fediverse.displayName` / `fediverse.summary`                                            |
+| `FEDIVERSE_ACTOR_SOURCE_URL`                       | unset                                                     | Removed (bogd3v/micelio-cms#307): a boot with it set stops, naming `fediverse.sourceUrl` (the Código link; the default is the `bogd3v/micelio-cms` repository)  |
+| `FRONTEND_URL`                                     | required in production; `http://localhost:3000` otherwise | Origin of the human-facing article links                                                                                                                        |
+| `FRONTEND_ARTICLE_PATH`                            | `/blog/{slug}`                                            | Article path template                                                                                                                                           |
+| `FRONTEND_DEFAULT_LOCALE`                          | `en`                                                      | Locale the frontend serves unprefixed; other locales get `/<locale>` in their links                                                                             |
+
+## Endpoints
+
+Served by Fedify, outside Strapi auth: `/.well-known/webfinger`, `/nodeinfo/2.1`, `/fediverse/user/:id` (actor), `/fediverse/user/:id/{inbox,outbox,followers}`, `/fediverse/inbox`, `/fediverse/articles/:documentId`. Public Strapi routes (aggregates only, cached 60 s where noted in `docs/api.md`): `GET /api/fediverse/articles/:documentId/stats` → `{ likes, boosts }` (404 for unpublished); `GET /api/fediverse/articles/stats?documentIds=a,b,c` → `{ [documentId]: { likes, boosts, replies } }` (max 50); `GET /api/fediverse/articles/ranking?page&pageSize&locale&category&tag&search` → most discussed first.
+
+## How it behaves
+
+- **Follow:** `Follow` → follower row + signed `Accept`. A blocked actor's `Follow` gets no answer. `actorId` has no database index, so followers settle duplicate rows like interactions do; treat an actor as blocked if any of its rows is. `Undo(Follow)`/`Block` remove it unless the actor is blocked (the row is kept, so only an admin lifts a block). A blocked actor's activities are ignored and their interactions stop counting.
+- **Object shape:** `fediverse.objectType` (`note` default, or `article`) decides whether an article is sent as an `Article` (with `name`) or a `Note` (no `name`, same body and `image`); the id (`/fediverse/articles/<documentId>`) and `url` are identical under both, and changing it sends nothing (bogd3v/micelio-cms#305).
+- **Articles:** the `federated-article` row (`status`, `lastActivityAt`, `lastActivityType`, `attempts`, `lastError`) is written before each send; an article is federated while its row is not `deleted`. Publishing queues `Create(Article)` (public `to`, followers in `cc`); publishing an already-sent article again is an `Update`; unpublish/delete is a `Delete`. Only the default locale, only published, and only articles with a `slug`. Each fan-out logs how many followers it was queued for (`no followers yet` means nothing was queued).
+- **Delivery:** `sendActivity` only enqueues; Fedify delivers in the background and retries with its default backoff. A failure raises `attempts` and sets `lastError`; the row turns `failed` only when Fedify gives up (retries exhausted, or a `404`/`410`). A `404`/`410` also sets `follower.unreachableSince`, and fan-outs skip that follower until it sends any activity (`heardFrom`). Fedify has no success callback: say "queued", never "delivered".
+- **Moderator replies:** an admin's reply (`isAdminComment`) to a fediverse comment goes out as a signed `Create(Note)` (to the remote author, cc public and followers); edit → `Update`, removed, blocked, rejected or pending → `Delete` with a `Tombstone`; `GET /fediverse/notes/<id>` is a 404 once it is not shown. Readers' and guests' comments never federate.
+- **Replies:** a `Create(Note)` replying to an article (by ActivityPub id or frontend URL) or to a stored reply becomes a `PENDING` comment. Content is stripped to plain text. Edits go back to `PENDING`; deletes set `removed`. Anything else is ignored.
+- **Moderation:** approve/reject in the admin comments moderation view. The host's global middleware hides `PENDING`/`REJECTED` comments from `GET /api/comments/*`; a host must never run the plugin without it.
+- **Profile:** the `fediverse` component of the default site, `plugin::micelio.site` (`username`, `displayName`, `summary`, `header`, `discoverable`, `sourceUrl`) is the home of the profile; each empty field falls back to `global`'s name and description, then the default site's `name` and `description` (`docs/architecture/federation.md`, "Actor profile in the site settings"). The username is read on every WebFinger and actor request, so a change needs no restart. Saving the default site, or the `global` single type, sends `Update(Person)` so followers' servers refresh the cached profile. A removed `FEDIVERSE_ACTOR_*` variable that is set stops the boot (`server/src/utils/removed-variables.ts`), and the host's migration (`src/migrations/fediverse-header.ts` in `bogd3v/micelio-cms`) moved `global.fediverseHeader` into the component (bogd3v/micelio-cms#307).
+- **Likes/boosts:** `Like`/`Announce` of a published article are recorded once per (type, actor, article); `Undo` removes only the sender's own.
+
+## Pitfalls that cost time before
+
+- Strapi's `unique: true` creates **no database index**; `db.query` can insert duplicates. Dedupe after insert if a race matters (see `server/src/services/interactions.ts`).
+- `strapi-plugin-comments` config keys other than `enabledCollections` are inert, and its public API shows pending comments unless the middleware hides them. Extend its schema through `strapi-server.ts`, never with an extension `schema.json` (shallow merge replaces all attributes).
+- Behind a TLS-terminating proxy the host's `config/server` needs `proxy: { koa: true }`, or every generated URL is `http://`.
+- Only the outer activity's actor is signature-verified: check embedded actors/authors against it (`Undo`, `Note.attributedTo`).
+- The document service does not autogenerate `slug` (only the admin UI does); articles without one are skipped with a warning.
+- The queued message carries the actor's private key as a plain JWK; `ObservedMessageQueue` encrypts it. Never hand Fedify a queue without that wrapper. `PostgresMessageQueue` deletes a message before handling it and handles one at a time.
+- A refused delivery is POSTed twice per attempt (Fedify double-knocks), and the remote's answer is untrusted text: never log or store `SendActivityError.message`.
+- Fedify logs through LogTape; `server/src/utils/fedify-logging.ts` forwards its `warning`+ records to `strapi.log` as `[fediverse] <category>: …` (once a minute per template, no record properties), and `onOutboxError`/inbox `onError` add their own `[fediverse]` lines. An inbox `401` also writes `security: fediverse.inbox.signature-refused` (`reason` `digest-algorithm` for a `Digest` with no SHA-256 or SHA-512 entry and `content-digest-not-covered` for an RFC 9421 signature that skips `content-digest`, both refused before Fedify; `invalid-signature` otherwise). Do not configure LogTape anywhere else; see `docs/architecture/federation.md` (Fedify's LogTape records) and `docs/security/logging.md`.
+- The Fedify Koa middleware must only run for federation paths (`/fediverse/*`, `/.well-known/*`, `/nodeinfo/*`): it consumes the request stream of every non-GET request it sees, which hangs any large POST/PUT elsewhere (long articles in the admin). Keep the path guard in `mountFediverseMiddleware`.
+- A host database that is wiped on deploy drops followers and regenerates the actor key; the host's store must be persistent (`docs/operate/configure.md`).
+- The actor private key is stored encrypted with `ENCRYPTION_KEY` (`server/src/utils/key-encryption.ts`). A decryption failure throws and must never fall through to generating a new pair (a new identity for every follower). Fedify turns a throwing key pairs dispatcher into "no keys", so `buildActor` refuses to serve a keyless actor; `mountFediverseMiddleware` answers those key errors itself with a generic `500` (`Internal Server Error`), because one that escapes to Koa is printed with its stack on every request, and the cause is logged at most once a minute. See `docs/architecture/federation.md` (Actor key at rest) and `docs/security/keys.md`.
+
+## Testing
+
+```bash
+npm test                     # builds, then all suites, SQLite, one database file per worker
+npx vitest run test/fediverse-phase3.test.ts   # one suite (run npm run build first)
+TEST_DATABASE_URL=postgres://user:pass@127.0.0.1:5432/postgres npm test   # PostgreSQL, as in production
+```
+
+- Suites boot a real Strapi; they set `FEDIVERSE_ENABLED` in `beforeAll`, before `setupStrapi()` (`test/strapi.ts`), and `test/fediverse-disabled.test.ts` covers the switched-off case.
+- `test/helpers/remote-actor.ts` starts a fake remote server (signed actor + recording inbox); `postSignedActivity()` signs a POST with Fedify's `signRequest`. `allowPrivateAddress` is on only when `NODE_ENV=test`, so 127.0.0.1 actors can be dereferenced.
+- Wait for async work with `test/helpers/wait-until.ts`; for "nothing happened" assertions use a short settle delay. Deliveries are queued, so a test never reads the fake inbox right after publishing.
+- `createRemoteActor({ inboxFailures: { status, times } })` makes the first POSTs fail (two per Fedify attempt); `strapi.config.set('plugin::fediverse.outboxRetryPolicy', createExponentialBackoffPolicy({ initialDelay: { milliseconds: 20 }, maxAttempts: 2, jitter: false }))` shortens the backoff, and must be set back to `undefined` afterwards.
+- PostgreSQL: the queue tests (`fediverse-queue-postgres`, `fediverse-delivery-restart`) run only with `TEST_DATABASE_URL`, and `setupStrapi({ keepDatabase: true })` reboots on the same database. A whole-suite run needs a server with room for the workers (`max_connections`, `max_locks_per_transaction`), or a lower `--maxWorkers`.
+- Same-origin forgery cases matter: Fedify already refuses embedded objects from a different origin, so test forgery with ids on the sender's own origin.
+
+## Testing against the real fediverse
+
+- **A host on a public HTTPS domain** (see `docs/operate/configure.md`): follow `@blog@cms.example.com` from a Mastodon account, publish an article with a slug, reply/like/boost, and read the app logs for `[fediverse]` lines. Do not redeploy between following and publishing unless the host's store is persistent.
+- **Fedify CLI** (same library as the plugin, so it checks the wire format, not other servers' behaviour): `npx @fedify/cli webfinger @blog@<domain>`, `npx @fedify/cli lookup @blog@<domain> <article-url>`, `npx @fedify/cli nodeinfo <domain>`, and `npx @fedify/cli inbox` for an ephemeral inbox behind a tunnel.
+- Cross-server behaviour (Pleroma/Akkoma, Misskey, GoToSocial) still needs a manual check against a real instance.
+
+## Do not
+
+- Enable `FEDIVERSE_ENABLED` in an environment whose `URL` is not its real public origin.
+- Add a listener that trusts an embedded actor/author without comparing it to the verified sender.
+- Show pending comments or interaction actors on a public route.
+- Rely on `MemoryKvStore` for anything that must survive a restart.

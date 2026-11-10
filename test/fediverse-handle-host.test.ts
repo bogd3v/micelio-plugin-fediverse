@@ -117,7 +117,7 @@ describe('Fediverse handle host', () => {
   })
 
   // Fedify resolves only `handleHost` once it is split from the web origin: the former handle
-  // `@bogdev@cms.example.test` stops resolving, which docs/FEDIVERSE.md says.
+  // `@bogdev@cms.example.test` stops resolving, which docs/architecture/federation.md says.
   it('stops answering for the CMS host and for any other host', async () => {
     expect((await webfinger('bogdev@cms.example.test')).status).toBe(404)
     expect((await webfinger('bogdev@elsewhere.example')).status).toBe(404)

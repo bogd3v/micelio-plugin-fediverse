@@ -1,6 +1,6 @@
-// The host's side of the plugin's contract with `strapi-plugin-comments` (docs/FEDIVERSE.md,
-// "Replies"): the plugin stores a fediverse reply as `PENDING`, and the comments plugin's public
-// endpoints return every comment. This is the middleware micelio-cms mounts to hide them.
+// The host's side of the plugin's contract with `strapi-plugin-comments` (docs/architecture/federation.md,
+// "Reply → comment"): the plugin stores a fediverse reply as `PENDING`, and the comments plugin's
+// public endpoints return every comment. This is the middleware micelio-cms mounts to hide them.
 const { isCommentsApiPath } = require('../utils/comments-path')
 
 const COMMENT_UID = 'plugin::comments.comment'

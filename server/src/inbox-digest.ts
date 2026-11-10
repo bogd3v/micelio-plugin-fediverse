@@ -4,7 +4,7 @@
  * Fedify 2.4.2 verifies a draft-cavage `Digest` header with SHA-1 (`SHA=`) as
  * readily as with SHA-256 and has no option to turn SHA-1 off, so the inbox
  * middleware runs this check before handing the request to Fedify. See
- * `docs/FEDIVERSE.md`, "Inbox digest algorithms".
+ * `docs/architecture/federation.md`, "Inbox digest algorithms".
  */
 
 import type { IncomingHttpHeaders } from 'node:http'

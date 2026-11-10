@@ -5,7 +5,8 @@
  * covers the `content-digest` component, and nothing requires an inbox `POST`
  * to cover it. The inbox middleware therefore refuses an RFC 9421 delivery
  * unless every signature in it covers `content-digest`. See
- * `docs/FEDIVERSE.md`, "Inbox digest algorithms".
+ * `docs/architecture/federation.md`, "RFC 9421 signatures must cover
+ * `content-digest`".
  */
 import { decodeDict } from 'structured-field-values'
 

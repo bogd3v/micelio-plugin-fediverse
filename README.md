@@ -29,7 +29,9 @@ The plugin is named `fediverse`, so its content types are `plugin::fediverse.fol
 
 The variables `FEDIVERSE_ACTOR_USERNAME`, `FEDIVERSE_ACTOR_NAME`, `FEDIVERSE_ACTOR_SUMMARY` and `FEDIVERSE_ACTOR_SOURCE_URL` are removed: a boot with one set stops, naming the field of the default site that replaces it (`server/src/utils/removed-variables.ts`).
 
-How federation works, and the findings behind each decision, are in `docs/FEDIVERSE.md` of `micelio-cms`, which moves here in a later step of the plan.
+## Documentation
+
+The documents are in [docs/](docs/), filed by reader: [how federation works](docs/architecture/federation.md) (contributors), [the public routes](docs/api.md) (integrators), [configuring a host](docs/operate/configure.md) (operators, including [what the host provides](docs/operate/configure.md#what-the-host-provides)), and the [log lines](docs/security/logging.md) and [keys](docs/security/keys.md) of the plugin.
 
 ## Getting started
 

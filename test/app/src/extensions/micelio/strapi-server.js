@@ -1,6 +1,6 @@
 // The inverse side of `article.category` and `article.tags`: a plugin's type cannot target a type
-// of the host, so the core cannot declare `articles` (docs/architecture/micelio-plugin.md in
-// micelio-cms).
+// of the host, so the core cannot declare `articles` (the core plugin's architecture note
+// in micelio-cms).
 module.exports = (plugin) => {
   const { category, tag } = plugin.contentTypes
 

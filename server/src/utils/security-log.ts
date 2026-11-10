@@ -3,7 +3,7 @@ import type { Core } from '@strapi/strapi'
 type StrapiLog = Pick<Core.Strapi['log'], 'warn'>
 
 /**
- * Why an inbox delivery was refused, from the app's `SECURITY_REASONS`:
+ * Why an inbox delivery was refused, from the host's `SECURITY_REASONS` (`micelio-cms`):
  * `digest-algorithm` when its `Digest` header has no SHA-256 or SHA-512 entry,
  * `content-digest-not-covered` when an RFC 9421 signature skips
  * `content-digest`, `invalid-signature` for every `401` Fedify gives.
@@ -12,9 +12,9 @@ export type InboxRefusalReason =
   'invalid-signature' | 'digest-algorithm' | 'content-digest-not-covered'
 
 /**
- * Event name, message and field names of the app's `logSecurityEvent`
- * (`src/utils/security-log.ts`). The plugin is self-contained, so it keeps its
- * own copy; the two must stay identical because operators alert on them.
+ * Event name, message and field names of the host's `logSecurityEvent`
+ * (`src/utils/security-log.ts` of `bogd3v/micelio-cms`). The plugin is self-contained, so it
+ * keeps its own copy; the two must stay identical because operators alert on them.
  */
 const SIGNATURE_REFUSED_EVENT = 'fediverse.inbox.signature-refused'
 /** Longest `path` written. */
