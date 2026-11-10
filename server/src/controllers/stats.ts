@@ -3,6 +3,7 @@ import type { Core } from '@strapi/strapi'
 import { findPublishedArticle } from '../services/articles'
 import { isConfiguredLocale } from '../utils/configured-locale'
 import { countInteractions } from '../services/interactions'
+import { siteOfRequest } from '../services/sites'
 import {
   BATCH_MAX_IDS,
   RANKING_DEFAULT_PAGE_SIZE,
@@ -20,6 +21,7 @@ const CACHE_CONTROL = 'public, max-age=60'
 interface Context {
   params: Record<string, string>
   query: Record<string, unknown>
+  state: unknown
   body: unknown
   set: (header: string, value: string) => void
   notFound: () => void
@@ -44,6 +46,11 @@ export default ({
 }): Record<'find' | 'batch' | 'ranking', (ctx: Context) => Promise<void>> => ({
   async find(ctx: Context) {
     const { documentId } = ctx.params
+    const site = await siteOfRequest(strapi, ctx)
+    if (site == null) {
+      ctx.notFound()
+      return
+    }
 
     // Only published articles: don't confirm that unpublished ids exist.
     if ((await findPublishedArticle(strapi, documentId)) == null) {
@@ -51,11 +58,16 @@ export default ({
       return
     }
 
-    ctx.body = await countInteractions(strapi, documentId)
+    ctx.body = await countInteractions(strapi, documentId, site)
   },
 
   /** `GET /articles/stats?documentIds=a,b,c`, answered as `{ [documentId]: { likes, boosts, replies } }`. */
   async batch(ctx: Context) {
+    const site = await siteOfRequest(strapi, ctx)
+    if (site == null) {
+      ctx.notFound()
+      return
+    }
     const raw = ctx.query.documentIds
     const ids = [
       ...new Set(
@@ -75,11 +87,16 @@ export default ({
     }
 
     ctx.set('Cache-Control', CACHE_CONTROL)
-    ctx.body = await statsForArticles(strapi, ids)
+    ctx.body = await statsForArticles(strapi, ids, site)
   },
 
   /** GET /articles/ranking?page=1&pageSize=6&locale=es&category=ia&tag=vue&search=rag */
   async ranking(ctx: Context) {
+    const site = await siteOfRequest(strapi, ctx)
+    if (site == null) {
+      ctx.notFound()
+      return
+    }
     const locale = textParam(ctx.query.locale)
     if (locale !== undefined && !(await isConfiguredLocale(strapi, locale))) {
       ctx.badRequest('locale is not a configured locale')
@@ -105,13 +122,17 @@ export default ({
     )
 
     ctx.set('Cache-Control', CACHE_CONTROL)
-    ctx.body = await rankArticles(strapi, {
-      page,
-      pageSize,
-      locale,
-      category,
-      tag,
-      search: search && search.length >= RANKING_SEARCH_MIN_LENGTH ? search : undefined,
-    })
+    ctx.body = await rankArticles(
+      strapi,
+      {
+        page,
+        pageSize,
+        locale,
+        category,
+        tag,
+        search: search && search.length >= RANKING_SEARCH_MIN_LENGTH ? search : undefined,
+      },
+      site
+    )
   },
 })

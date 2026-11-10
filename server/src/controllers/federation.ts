@@ -5,6 +5,7 @@ import { ARTICLE_UID } from '../constants/uids'
 import { getDefaultLocale } from '../services/articles'
 import { describeFederation, federateBlocker } from '../services/federation-panel'
 import { federateArticle } from '../services/publisher'
+import { siteOfRequest } from '../services/sites'
 import type { FederateResult } from '../types/federation-panel'
 import { sendProblem } from '../utils/problem'
 
@@ -61,14 +62,19 @@ export default ({
       sendProblem(ctx, 403, 'forbidden', `Your role may not ${action} this article.`)
       return null
     }
-    return { documentId, locale }
+    const site = await siteOfRequest(strapi, ctx)
+    if (site == null) {
+      sendProblem(ctx, 404, 'unknown-site', 'There is no such site.')
+      return null
+    }
+    return { documentId, locale, site }
   }
 
   return {
     async find(ctx) {
       const target = await authorize(ctx, 'read')
       if (target == null) return
-      ctx.body = await describeFederation(strapi, target.documentId, target.locale)
+      ctx.body = await describeFederation(strapi, target.documentId, target.locale, target.site)
     },
 
     async federate(ctx) {
@@ -90,7 +96,7 @@ export default ({
 
       let outcome
       try {
-        outcome = await federateArticle(strapi, target.documentId)
+        outcome = await federateArticle(strapi, target.documentId, target.site)
       } catch (error) {
         // The activity could not be queued (e.g. the queue's database is down).
         strapi.log.error(

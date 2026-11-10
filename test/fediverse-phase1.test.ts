@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { setupStrapi, cleanupStrapi, serverHost } from './strapi'
 import { createRemoteActor } from './helpers/remote-actor'
+import { defaultSiteRelation } from './helpers/categories'
 import { waitUntil } from './helpers/wait-until'
 import { updateDefaultSite, writeFediverseProfile } from './helpers/fediverse-profile'
 import type { Modules } from '@strapi/strapi'
@@ -304,7 +305,9 @@ describe('Fediverse federation (Phase 1: actor, keys, followers)', () => {
       // `unique: true` creates no database index, so concurrent Follows can leave two rows.
       const insertDuplicates = async (actorId: string, blockedFlags: boolean[]) => {
         for (const blocked of blockedFlags) {
-          await followerQuery().create({ data: { actorId, blocked } })
+          await followerQuery().create({
+            data: { actorId, blocked, site: await defaultSiteRelation() },
+          })
         }
       }
 

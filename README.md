@@ -14,7 +14,7 @@ The plugin reads and writes content types it does not own, so a host provides th
 
 ## Configuration
 
-The plugin is named `fediverse`, so its content types are `plugin::fediverse.follower`, `.interaction` and `.federated-article`, and its permission actions `plugin::fediverse.read` and `.manage`. A host enables it from `config/plugins.ts`, as `test/app/config/plugins.js` does. The variables are in [.env.example](.env.example):
+The plugin is named `fediverse`, so its content types are `plugin::fediverse.follower`, `.interaction` and `.federated-article`, and its permission actions `plugin::fediverse.read` and `.manage`. Each row of the three belongs to a site (`site`, a required relation made by `withSiteScope` of `@micelio/strapi-plugin-core`) and each site has its own actor key; see [Sites](docs/architecture/federation.md#sites) and, to upgrade, [docs/operate/configure.md](docs/operate/configure.md#upgrading-to-07-the-federation-state-belongs-to-a-site). A host enables it from `config/plugins.ts`, as `test/app/config/plugins.js` does. The variables are in [.env.example](.env.example):
 
 | Variable                     | Default                                                   | Purpose                                                                                               |
 | ---------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |

@@ -1,3 +1,7 @@
+import { SITE_SCOPE_MIDDLEWARE } from '@micelio/strapi-plugin-core/strapi-server'
+
+// The content API routes name their site with the core's route middleware (`?site=<slug>`, then
+// the host, then the default site); the admin routes take the same `site` parameter in the handler.
 export default {
   // The default prefix of a plugin's admin routes would be `/fediverse`, which Fedify's middleware
   // owns: it would put its security headers and rate limit on the panel and read the body of the
@@ -65,20 +69,20 @@ export default {
         method: 'GET',
         path: '/articles/stats',
         handler: 'stats.batch',
-        config: { auth: false },
+        config: { auth: false, middlewares: [SITE_SCOPE_MIDDLEWARE] },
       },
       {
         method: 'GET',
         path: '/articles/ranking',
         handler: 'stats.ranking',
-        config: { auth: false },
+        config: { auth: false, middlewares: [SITE_SCOPE_MIDDLEWARE] },
       },
       {
         method: 'GET',
         path: '/articles/:documentId/stats',
         handler: 'stats.find',
         // Public: it exposes counts only, so no users-permissions role setup is needed.
-        config: { auth: false },
+        config: { auth: false, middlewares: [SITE_SCOPE_MIDDLEWARE] },
       },
     ],
   },

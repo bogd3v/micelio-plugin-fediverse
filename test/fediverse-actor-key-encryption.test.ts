@@ -12,7 +12,7 @@ const ACTIVITY_JSON = 'application/activity+json'
 /** Neutral actor handle and URI path, set before Strapi boots so WebFinger and the actor URL agree. */
 const ACTOR_USERNAME = 'alice'
 const ACTOR_IDENTIFIER = 'actor'
-const CORE_STORE_KEY = 'plugin_fediverse_keyPairs'
+const CORE_STORE_KEY_PREFIX = 'plugin_fediverse_'
 const OTHER_KEY = 'fedcba9876543210fedcba9876543210'
 /** The plugin repeats a key pairs failure line at most once a minute (`WARNING_INTERVAL_MS`). */
 const LOG_INTERVAL_MS = 60_000
@@ -41,9 +41,19 @@ interface KeysService {
   ): Promise<{ publicKey: webcrypto.CryptoKey; privateKey: webcrypto.CryptoKey }[]>
 }
 
+/** The plugin store key of the default site's actor key: one entry per site, `keyPairs:<site>`. */
+async function actorKeyStoreKey(): Promise<string> {
+  const site = (await strapi.db
+    .query('plugin::micelio.site')
+    .findOne({ where: { isDefault: true }, select: ['documentId'] })) as { documentId: string }
+  return `keyPairs:${site.documentId}`
+}
+
 /** The core store row exactly as the database holds it. */
 async function rawRow(): Promise<{ id: number; value: string } | null> {
-  return strapi.db.query('strapi::core-store').findOne({ where: { key: CORE_STORE_KEY } })
+  return strapi.db
+    .query('strapi::core-store')
+    .findOne({ where: { key: `${CORE_STORE_KEY_PREFIX}${await actorKeyStoreKey()}` } })
 }
 
 async function storedEntries(): Promise<StoredEntry[]> {
@@ -53,11 +63,15 @@ async function storedEntries(): Promise<StoredEntry[]> {
 }
 
 async function writeEntries(value: unknown): Promise<void> {
-  await strapi.store({ type: 'plugin', name: 'fediverse' }).set({ key: 'keyPairs', value })
+  await strapi
+    .store({ type: 'plugin', name: 'fediverse' })
+    .set({ key: await actorKeyStoreKey(), value })
 }
 
 async function deleteEntries(): Promise<void> {
-  await strapi.db.query('strapi::core-store').delete({ where: { key: CORE_STORE_KEY } })
+  await strapi.db
+    .query('strapi::core-store')
+    .delete({ where: { key: `${CORE_STORE_KEY_PREFIX}${await actorKeyStoreKey()}` } })
 }
 
 /**

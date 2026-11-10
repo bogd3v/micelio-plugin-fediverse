@@ -1,9 +1,10 @@
 import type { Core } from '@strapi/strapi'
 
-import { ARTICLE_UID, COMMENT_UID, INTERACTION_UID } from '../constants/uids'
+import { ARTICLE_UID, COMMENT_UID, INTERACTION_UID, SITE_UID } from '../constants/uids'
 import type { ArticleStats, RankingOptions, RankingPage } from '../types/stats'
 import { getDefaultLocale } from './articles'
 import { listFollowers } from './followers'
+import { resolveSite } from './sites'
 
 /** Comments point at their article as `api::article.article:<documentId>`. */
 const RELATED_PREFIX = `${ARTICLE_UID}:`
@@ -43,8 +44,31 @@ function model(strapi: Core.Strapi, uid: string): Model {
   }
 }
 
-async function blockedActorIds(strapi: Core.Strapi): Promise<string[]> {
-  return (await listFollowers(strapi, { blocked: true })).map((follower) => follower.actorId)
+async function blockedActorIds(strapi: Core.Strapi, site: string): Promise<string[]> {
+  return (await listFollowers(strapi, { blocked: true, site })).map((follower) => follower.actorId)
+}
+
+/**
+ * Limits a raw query on the interactions table to one site's rows, through the link table of the
+ * `site` relation (a raw query cannot use the `where` of `db.query`).
+ */
+function onlySite(strapi: Core.Strapi, query: QueryBuilder, site: string): void {
+  const knex = strapi.db.connection
+  const link = (
+    strapi.db.metadata.get(INTERACTION_UID).attributes.site as unknown as {
+      joinTable: { name: string; joinColumn: { name: string }; inverseJoinColumn: { name: string } }
+    }
+  ).joinTable
+  const siteModel = model(strapi, SITE_UID)
+  query.whereIn(
+    'id',
+    knex(link.name)
+      .select(link.joinColumn.name)
+      .whereIn(
+        link.inverseJoinColumn.name,
+        knex(siteModel.table).select('id').where(siteModel.column('documentId'), site)
+      )
+  )
 }
 
 /**
@@ -53,6 +77,7 @@ async function blockedActorIds(strapi: Core.Strapi): Promise<string[]> {
  */
 function interactionCounts(
   strapi: Core.Strapi,
+  site: string,
   blocked: string[],
   documentIds?: string[]
 ): QueryBuilder {
@@ -66,6 +91,7 @@ function interactionCounts(
     .select(knex.raw('SUM(CASE WHEN ?? = ? THEN 1 ELSE 0 END) as likes', [type, 'like']))
     .select(knex.raw('SUM(CASE WHEN ?? = ? THEN 1 ELSE 0 END) as boosts', [type, 'boost']))
     .groupBy(documentId)
+  onlySite(strapi, query, site)
   if (blocked.length > 0) query.whereNotIn(interaction.column('actorId'), blocked)
   if (documentIds) query.whereIn(documentId, documentIds)
   return query
@@ -110,11 +136,12 @@ function replyCounts(strapi: Core.Strapi, blocked: string[], documentIds?: strin
  */
 export async function replyCountsByStatus(
   strapi: Core.Strapi,
-  documentId: string
+  documentId: string,
+  siteId?: string
 ): Promise<{ approved: number; pending: number }> {
   const comment = model(strapi, COMMENT_UID)
   const status = comment.column('approvalStatus')
-  const blocked = await blockedActorIds(strapi)
+  const blocked = await blockedActorIds(strapi, await resolveSite(strapi, siteId))
 
   const query = strapi.db
     .connection(comment.table)
@@ -185,20 +212,22 @@ async function filteredDocumentIds(
  */
 export async function statsForArticles(
   strapi: Core.Strapi,
-  documentIds: string[]
+  documentIds: string[],
+  siteId?: string
 ): Promise<Record<string, ArticleStats>> {
+  const site = await resolveSite(strapi, siteId)
   const ids = [...new Set(documentIds)]
   if (ids.length === 0) return {}
 
   const article = model(strapi, ARTICLE_UID)
   const locale = await getDefaultLocale(strapi)
-  const blocked = await blockedActorIds(strapi)
+  const blocked = await blockedActorIds(strapi, site)
 
   const [published, interactions, replies] = await Promise.all([
     publishedArticles(strapi, locale)
       .whereIn(`article.${article.column('documentId')}`, ids)
       .select(`article.${article.column('documentId')} as document_id`),
-    interactionCounts(strapi, blocked, ids),
+    interactionCounts(strapi, site, blocked, ids),
     replyCounts(strapi, blocked, ids),
   ])
 
@@ -228,12 +257,14 @@ export async function statsForArticles(
  */
 export async function rankArticles(
   strapi: Core.Strapi,
-  { page, pageSize, locale, category, tag, search }: RankingOptions
+  { page, pageSize, locale, category, tag, search }: RankingOptions,
+  siteId?: string
 ): Promise<RankingPage> {
+  const site = await resolveSite(strapi, siteId)
   const knex = strapi.db.connection
   const article = model(strapi, ARTICLE_UID)
   const resolvedLocale = locale || (await getDefaultLocale(strapi))
-  const blocked = await blockedActorIds(strapi)
+  const blocked = await blockedActorIds(strapi, site)
   const filtered = Boolean(category || tag || search)
   const matching = filtered
     ? await filteredDocumentIds(strapi, resolvedLocale, { category, tag, search })
@@ -252,7 +283,7 @@ export async function rankArticles(
   const [rows, totals] = await Promise.all([
     articles()
       .leftJoin(
-        interactionCounts(strapi, blocked).as('interactions'),
+        interactionCounts(strapi, site, blocked).as('interactions'),
         'interactions.document_id',
         documentId
       )

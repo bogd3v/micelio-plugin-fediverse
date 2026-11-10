@@ -5,6 +5,7 @@ import request from 'supertest'
 import { setupStrapi, cleanupStrapi, serverHost } from './strapi'
 import { createRemoteActor, type RemoteActor } from './helpers/remote-actor'
 import { waitUntil } from './helpers/wait-until'
+import { defaultSiteRelation } from './helpers/categories'
 import en from '../admin/src/translations/en.json'
 import es from '../admin/src/translations/es.json'
 
@@ -209,15 +210,19 @@ describe('Fediverse plugin page (admin routes)', () => {
 
     it('reports a missing actor key and does not create one: a read route writes nothing', async () => {
       const store = strapi.store({ type: 'plugin', name: 'fediverse' })
-      const saved = await store.get({ key: 'keyPairs' })
-      await store.delete({ key: 'keyPairs' })
+      const site = (await strapi.db
+        .query('plugin::micelio.site')
+        .findOne({ where: { isDefault: true }, select: ['documentId'] })) as { documentId: string }
+      const keyName = `keyPairs:${site.documentId}`
+      const saved = await store.get({ key: keyName })
+      await store.delete({ key: keyName })
       try {
         const result = await checks()
 
         expect(result['actor-key']).toMatchObject({ ok: false, code: 'actor-key-missing' })
-        expect(await store.get({ key: 'keyPairs' })).toBeNull()
+        expect(await store.get({ key: keyName })).toBeNull()
       } finally {
-        await store.set({ key: 'keyPairs', value: saved })
+        await store.set({ key: keyName, value: saved })
       }
     })
 
@@ -335,9 +340,14 @@ describe('Fediverse plugin page (admin routes)', () => {
         .plugin('fediverse')
         .service('followers')
         .recordFollower(strapi, { actorId: remote.actorUrl, inbox: remote.inboxUrl })
-      await strapi.db
-        .query(FOLLOWER_UID)
-        .create({ data: { actorId: remote.actorUrl, inbox: remote.inboxUrl, blocked: true } })
+      await strapi.db.query(FOLLOWER_UID).create({
+        data: {
+          actorId: remote.actorUrl,
+          inbox: remote.inboxUrl,
+          blocked: true,
+          site: await defaultSiteRelation(),
+        },
+      })
 
       await request(server())
         .post(api(`/followers/${first.documentId}/unblock`))
