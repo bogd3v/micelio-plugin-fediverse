@@ -161,7 +161,9 @@ describe('Fediverse batch stats and ranking', () => {
     await interact(articles.c, 'boost')
 
     // Blocked actors count for nothing, likes or replies.
-    await strapi.db.query(FOLLOWER_UID).create({ data: { actorId: BLOCKED_ACTOR, blocked: true } })
+    await strapi.db.query(FOLLOWER_UID).create({
+      data: { actorId: BLOCKED_ACTOR, blocked: true, site: await defaultSiteRelation() },
+    })
     await interact(articles.d, 'like', BLOCKED_ACTOR)
     await comment(articles.d, { authorId: BLOCKED_ACTOR })
 

@@ -30,6 +30,7 @@ const TITLES: Record<FederationProblemCode, string> = {
   'queue-unavailable': 'Delivery queue unavailable',
   'follower-not-found': 'Follower not found',
   'not-failed': 'Nothing to retry',
+  'unknown-site': 'Unknown site',
 }
 
 /** The part of a Koa context that answering a problem detail needs. */

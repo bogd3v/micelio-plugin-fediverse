@@ -3,6 +3,7 @@ import type { Core } from '@strapi/strapi'
 import { INTERACTION_UID } from '../constants/uids'
 import type { InteractionInput, InteractionType } from '../types/interactions'
 import { listFollowers } from './followers'
+import { inSite, resolveSite, siteRowId } from './sites'
 
 // The article is referenced by documentId rather than a relation: articles are
 // draft-and-publish + localized, so a relation would point at one specific
@@ -22,17 +23,21 @@ export function interactionKey(type: InteractionType, actorId: string, documentI
 }
 
 /**
- * Idempotent: a repeated Like/Announce from the same actor is `exists`, never
+ * Scoped to a site (the last argument, the default site when omitted). Idempotent: a repeated Like/Announce from the same actor is `exists`, never
  * a second row. With no unique index to lean on, concurrent deliveries of the
  * same activity are settled after the insert: only the oldest row for the key
  * survives, so exactly one remains even across several Strapi processes.
  */
 export async function recordInteraction(
   strapi: Core.Strapi,
-  input: InteractionInput
+  input: InteractionInput,
+  siteId?: string
 ): Promise<'created' | 'exists'> {
+  const site = await resolveSite(strapi, siteId)
   const key = interactionKey(input.type, input.actorId, input.articleDocumentId)
-  if (await query(strapi).findOne({ where: { interactionKey: key } })) return 'exists'
+  if (await query(strapi).findOne({ where: { ...inSite(site), interactionKey: key } })) {
+    return 'exists'
+  }
 
   const created = (await query(strapi).create({
     data: {
@@ -41,6 +46,7 @@ export async function recordInteraction(
       handle: input.handle ?? null,
       articleDocumentId: input.articleDocumentId,
       interactionKey: key,
+      site: await siteRowId(strapi, site),
     },
   })) as { id: number; documentId: string }
 
@@ -48,7 +54,7 @@ export async function recordInteraction(
   // Postgres a lower id can commit after a higher one, so each writer must
   // also clean up rows it didn't insert for the set to converge to one.
   const rows = (await query(strapi).findMany({
-    where: { interactionKey: key },
+    where: { ...inSite(site), interactionKey: key },
     orderBy: { id: 'asc' },
   })) as Array<{ id: number; documentId: string }>
   const [oldest, ...duplicates] = rows
@@ -66,12 +72,14 @@ export async function recordInteraction(
  */
 export async function removeInteraction(
   strapi: Core.Strapi,
-  input: Omit<InteractionInput, 'handle'>
+  input: Omit<InteractionInput, 'handle'>,
+  siteId?: string
 ): Promise<boolean> {
+  const site = await resolveSite(strapi, siteId)
   const key = interactionKey(input.type, input.actorId, input.articleDocumentId)
-  const existing = (await query(strapi).findOne({ where: { interactionKey: key } })) as {
-    documentId: string
-  } | null
+  const existing = (await query(strapi).findOne({
+    where: { ...inSite(site), interactionKey: key },
+  })) as { documentId: string } | null
   if (!existing) return false
 
   await query(strapi).delete({ where: { documentId: existing.documentId } })
@@ -84,12 +92,15 @@ export async function removeInteraction(
  */
 export async function countInteractions(
   strapi: Core.Strapi,
-  articleDocumentId: string
+  articleDocumentId: string,
+  siteId?: string
 ): Promise<{ likes: number; boosts: number }> {
-  const blocked = (await listFollowers(strapi, { blocked: true })).map((f) => f.actorId)
+  const site = await resolveSite(strapi, siteId)
+  const blocked = (await listFollowers(strapi, { blocked: true, site })).map((f) => f.actorId)
   const count = (type: InteractionType) =>
     query(strapi).count({
       where: {
+        ...inSite(site),
         type,
         articleDocumentId,
         ...(blocked.length ? { actorId: { $notIn: blocked } } : {}),

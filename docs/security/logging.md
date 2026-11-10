@@ -23,7 +23,9 @@ The plugin writes through `strapi.log` only, so its lines follow the host's form
 
 `info` lines for accepted and removed followers, unfollows, blocks, replies that were edited or deleted remotely, and the publication of an article or the profile (`server/src/federation.ts`, `server/src/services/publisher.ts`). `warn` lines for an ignored `Follow` or `Note` and a request guard that failed open (`server/src/federation.ts`). A `debug` line for an ignored reply is not written at the default level.
 
-The actor key pair is generated on the first boot that finds none (`getActorKeyPairs` in `server/src/services/keys.ts`); the key material itself is never logged.
+The actor key pair of a site is generated on the first use that finds none (`getActorKeyPairs` in `server/src/services/keys.ts`); the key material itself is never logged.
+
+An `info` line `[fediverse] gave the default site N follower(s), N interaction(s), N federated article(s) and N actor key(s)` is written by the boot step that gives the default site what the plugin stored before the sites (`adoptDefaultSite` in `server/src/services/default-site.ts`), only when it changed something. It carries counts and nothing else: no actor id, handle or key. The rows made from the old `federatedArticles` store key are not in that count; `migrated N federated article(s) from the plugin store` reports them.
 
 ### Personal data in these lines
 

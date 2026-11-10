@@ -2,16 +2,29 @@ import type { Core } from '@strapi/strapi'
 
 import { generateCryptoKeyPair, importJwk } from '@fedify/fedify'
 
+import { SITE_UID } from '../constants/uids'
 import {
   decryptText,
   encryptText,
   isEncryptedEnvelope,
   type EncryptedEnvelope,
 } from '../utils/key-encryption'
+import { resolveSite } from './sites'
 
 type PluginStore = Awaited<ReturnType<Core.Strapi['store']>>
 
-const STORE_KEY = 'keyPairs'
+/**
+ * Plugin store key the actor key was kept under before the sites: one entry for the one actor.
+ * Each site has its own entry now, `keyPairs:<site documentId>`. This one is read only to copy it
+ * to the default site's (`services/default-site.ts`), and stays in the store for one release line so
+ * a rollback still finds it.
+ */
+const LEGACY_STORE_KEY = 'keyPairs'
+
+/** The plugin store key of a site's actor key. */
+function storeKey(site: string): string {
+  return `${LEGACY_STORE_KEY}:${site}`
+}
 
 interface StoredKeyPair {
   /**
@@ -103,9 +116,20 @@ function sealPlainEntries(strapi: Core.Strapi, entries: StoredKeyPair[]): Stored
   )
 }
 
+/** Seals the plain private keys of one store entry; whether it rewrote the entry. */
+async function sealEntry(strapi: Core.Strapi, store: PluginStore, key: string): Promise<boolean> {
+  const stored: unknown = await store.get({ key })
+  if (!isStoredKeyPairs(stored)) return false
+  const sealed = sealPlainEntries(strapi, stored)
+  if (!sealed) return false
+  await store.set({ key, value: sealed })
+  return true
+}
+
 /**
- * Encrypts a stored actor key pair that predates encryption at rest, so the
- * database no longer holds the plain private JWK. Run at boot.
+ * Encrypts the stored actor key pairs that predate encryption at rest, so the database no longer
+ * holds a plain private JWK: the entry of every site and the one kept from before the sites.
+ * Run at boot.
  *
  * @remarks
  * Idempotent: an encrypted entry is never touched, so a wrong `ENCRYPTION_KEY`
@@ -115,16 +139,21 @@ function sealPlainEntries(strapi: Core.Strapi, entries: StoredKeyPair[]): Stored
  */
 export async function encryptStoredActorKeys(strapi: Core.Strapi): Promise<void> {
   const store = await getStore(strapi)
-  const stored: unknown = await store.get({ key: STORE_KEY })
-  if (!isStoredKeyPairs(stored)) return
-  const sealed = sealPlainEntries(strapi, stored)
-  if (!sealed) return
-  await store.set({ key: STORE_KEY, value: sealed })
-  strapi.log.info('[fediverse] encrypted the stored actor private key with ENCRYPTION_KEY')
+  const sites = (await strapi.db.query(SITE_UID).findMany({ select: ['documentId'] })) as Array<{
+    documentId: string
+  }>
+  const keys = [LEGACY_STORE_KEY, ...new Set(sites.map((row) => storeKey(row.documentId)))]
+  let rewritten = 0
+  for (const key of keys) {
+    if (await sealEntry(strapi, store, key)) rewritten += 1
+  }
+  if (rewritten > 0) {
+    strapi.log.info('[fediverse] encrypted the stored actor private key with ENCRYPTION_KEY')
+  }
 }
 
 /**
- * Returns the blog actor's key pairs, generating and persisting them in the
+ * Returns a site's actor key pairs (the default site's when `siteId` is omitted), generating and persisting them in the
  * plugin store on first use. Persisted as JWKs (WebCrypto export), so the
  * actor identity survives restarts — remote followers would otherwise break
  * on every deploy. Key ids are derived by Fedify from the current request
@@ -138,9 +167,13 @@ export async function encryptStoredActorKeys(strapi: Core.Strapi): Promise<void>
  * @throws `ActorKeyDecryptionError`, naming `ENCRYPTION_KEY`, when a stored
  * private key cannot be decrypted. The store is left as it was.
  */
-export async function getActorKeyPairs(strapi: Core.Strapi): Promise<ActorKeyPairResult[]> {
+export async function getActorKeyPairs(
+  strapi: Core.Strapi,
+  siteId?: string
+): Promise<ActorKeyPairResult[]> {
+  const site = await resolveSite(strapi, siteId)
   const store = await getStore(strapi)
-  const stored: unknown = await store.get({ key: STORE_KEY })
+  const stored: unknown = await store.get({ key: storeKey(site) })
 
   if (isStoredKeyPairs(stored)) {
     const key = configuredEncryptionKey(strapi)
@@ -156,7 +189,7 @@ export async function getActorKeyPairs(strapi: Core.Strapi): Promise<ActorKeyPai
       }))
     )
     const sealed = sealPlainEntries(strapi, stored)
-    if (sealed) await store.set({ key: STORE_KEY, value: sealed })
+    if (sealed) await store.set({ key: storeKey(site), value: sealed })
     return pairs
   }
 
@@ -170,7 +203,7 @@ export async function getActorKeyPairs(strapi: Core.Strapi): Promise<ActorKeyPai
     algorithm: generated.publicKey.algorithm.name,
     generatedAt: new Date().toISOString(),
   }
-  await store.set({ key: STORE_KEY, value: sealPlainEntries(strapi, [entry]) ?? [entry] })
+  await store.set({ key: storeKey(site), value: sealPlainEntries(strapi, [entry]) ?? [entry] })
   strapi.log.info('[fediverse] generated and persisted a new actor key pair')
 
   return [
@@ -188,9 +221,12 @@ export async function getActorKeyPairs(strapi: Core.Strapi): Promise<ActorKeyPai
  * @returns `missing` when no key pair is stored.
  * @throws `ActorKeyDecryptionError`, naming `ENCRYPTION_KEY`, when a private key cannot be decrypted.
  */
-export async function verifyStoredActorKey(strapi: Core.Strapi): Promise<'ok' | 'missing'> {
+export async function verifyStoredActorKey(
+  strapi: Core.Strapi,
+  siteId?: string
+): Promise<'ok' | 'missing'> {
   const store = await getStore(strapi)
-  const stored: unknown = await store.get({ key: STORE_KEY })
+  const stored: unknown = await store.get({ key: storeKey(await resolveSite(strapi, siteId)) })
   if (!isStoredKeyPairs(stored)) return 'missing'
   const key = configuredEncryptionKey(strapi)
   for (const entry of stored) {
@@ -206,14 +242,15 @@ export async function verifyStoredActorKey(strapi: Core.Strapi): Promise<'ok' | 
 }
 
 /**
- * Returns the persisted JWK entries as stored, private keys encrypted
+ * Returns a site's persisted JWK entries as stored, private keys encrypted
  * (test/debug helper; also lets tests prove persistence without re-deriving keys).
  */
 export async function getStoredKeyPairEntries(
-  strapi: Core.Strapi
+  strapi: Core.Strapi,
+  siteId?: string
 ): Promise<StoredKeyPair[] | null> {
   const store = await getStore(strapi)
-  const stored: unknown = await store.get({ key: STORE_KEY })
+  const stored: unknown = await store.get({ key: storeKey(await resolveSite(strapi, siteId)) })
   return isStoredKeyPairs(stored) ? stored : null
 }
 

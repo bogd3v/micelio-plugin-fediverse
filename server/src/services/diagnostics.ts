@@ -40,9 +40,9 @@ function checkPublicUrl(origin: string | undefined): Diagnostic {
  * Checks the stored actor key without changing anything: a read route must not create the actor's
  * identity or rewrite its key. Only the error's class decides the code, never its message.
  */
-async function checkActorKey(strapi: Core.Strapi): Promise<Diagnostic> {
+async function checkActorKey(strapi: Core.Strapi, site?: string): Promise<Diagnostic> {
   try {
-    return (await verifyStoredActorKey(strapi)) === 'ok'
+    return (await verifyStoredActorKey(strapi, site)) === 'ok'
       ? ok('actor-key')
       : failed('actor-key', 'actor-key-missing')
   } catch (error) {
@@ -118,13 +118,16 @@ async function figure(
 /**
  * Runs the checks of the plugin page, in the order it shows them. None throws: a check that
  * cannot run is a failing check with its own code.
+ *
+ * @param site - The `documentId` of the site whose key and followers are checked; the default site
+ * when omitted.
  */
-export async function runDiagnostics(strapi: Core.Strapi): Promise<Diagnostic[]> {
+export async function runDiagnostics(strapi: Core.Strapi, site?: string): Promise<Diagnostic[]> {
   const origin = publicOrigin()
   const [actorKey, webfinger, followers, refusals] = await Promise.all([
-    checkActorKey(strapi),
+    checkActorKey(strapi, site),
     checkWebFinger(strapi, origin),
-    figure(strapi, 'followers', () => countFollowers(strapi)),
+    figure(strapi, 'followers', () => countFollowers(strapi, { site })),
     figure(strapi, 'inbox refusals', () => countInboxRefusals(getFederationKv(strapi))),
   ])
   return [

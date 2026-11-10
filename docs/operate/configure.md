@@ -13,7 +13,7 @@ The plugin reads and writes content types it does not own, and it never imports 
 - **The comments extension**: a `strapi-server` extension of `strapi-plugin-comments` (`src/extensions/comments/strapi-server.ts` in `bogd3v/micelio-cms`, `test/app/src/extensions/comments/strapi-server.js` in this repository) that adds the attributes the plugin writes: `fediverseUri` (the remote note id, unique) and `fediverseActorHandle` (`@user@host`, or `null`) for ingested replies, and `fediverseNoteUri` and `fediverseNoteRetracted` for a moderator's reply. It is a server extension, not an extension `schema.json`: Strapi merges schema files shallowly, and a `schema.json` that declared `attributes` would replace every attribute of the comments plugin.
 - **The middlewares that hide what must not be public**: one that prunes `PENDING` and `REJECTED` comments and their subtrees from `GET /api/comments/*` (the plugin stores every fediverse reply as `PENDING`, and the comments plugin's public API returns every comment), and one that gives back the public fediverse fields (`fediverseUri`, `fediverseActorHandle`) that the comments plugin's response schema drops, never the non-public `fediverseNoteUri` and `fediverseNoteRetracted`. Without the first, remote spam is public the moment it arrives. They belong to the host so they keep protecting readers while the plugin is off (`test/app/src/middlewares/` has the minimal pair).
 - **`proxy: { koa: true }`** in `config/server`. Behind a TLS-terminating proxy, Koa must trust it, or every ActivityPub id is generated with `http://`.
-- **A persistent store.** Followers, the actor key pair, the record of federated articles and, on PostgreSQL, the deliveries waiting to be sent live in the database. If it is wiped, the next boot generates a new actor key and every follower is lost.
+- **A persistent store.** Followers, the actor key pair, the record of federated articles and, on PostgreSQL, the deliveries waiting to be sent live in the database. If it is wiped, the next boot generates a new actor key and every follower is lost. Each site's rows and key live in it.
 - **`ENCRYPTION_KEY`**, Strapi's own (`admin.secrets.encryptionKey`): the actor's private key is stored encrypted with it, and so are the queued deliveries. See [security/keys.md](../security/keys.md).
 - **The admin registration.** The panel in the article edit view and the Fediverse page are registered from the host's root admin app (`registerFederationPanel` and `registerFediversePage` of `admin/src/index.ts`; `src/admin/app.tsx` in `bogd3v/micelio-cms`), because Strapi bundles a local plugin's admin code only when the plugin is enabled while the admin is built. This package does not build or export its admin code yet: how a host receives it is decided by the issues that follow the move.
 - **Optionally, a request guard** for rate limiting: a function registered as `plugin::fediverse.requestGuard` in the config, called on federation paths before Fedify reads the request ([architecture/federation.md](../architecture/federation.md#hosting-in-strapi)).
@@ -104,6 +104,18 @@ Once set, **only the handle host resolves**: `@blog@cms.example.com` stops answe
    npx @fedify/cli lookup @blog@cms.example.com                               # actor with inbox, outbox, publicKey
    ```
 4. Follow the actor from a Mastodon account, publish an article, and watch the logs for `[fediverse]` lines (each fan-out reports how many followers it was queued for).
+
+## Upgrading to 0.7: the federation state belongs to a site
+
+**This is a breaking change of stored data.** The followers, interactions and federated-article rows, and the actor key, belong to a site now (ADR-0017, section 4), and the plugin needs `@micelio/strapi-plugin-core` 0.2 or later, which owns the sites. Nothing is lost and nothing changes for remote servers: the actor id, the key id and the messages in the delivery queue are the same, and `fedify_kv_v2` and `fedify_message_v2` are not touched.
+
+1. Take a database backup (the host's procedure).
+2. Install the new version and restart. On the first boot, once the core has created the default site (it has since its 0.6), the plugin gives it every follower, interaction and federated-article row that has no site, and copies the stored actor key to the default site's entry. It logs counts only, for example `[fediverse] gave the default site 120 follower(s), 340 interaction(s), 85 federated article(s) and 1 actor key(s)`. A second boot logs nothing and changes nothing. On a database that has no site yet, the same happens as soon as the core creates the default site.
+3. Check that **Fediverse** lists the followers it listed before, and that the actor document is the same (apart from timestamps).
+
+**Rollback:** the key stays under its old name in the store (`keyPairs`) for one release line, so the previous version finds it. The `site` column of the rows stays in the tables; the previous version ignores it.
+
+With more than one site, each has its own followers, interactions, federation state and actor key. This release serves the default site's actor; the Fediverse page and the panel of an article take `?site=<slug>` to show another site's state ([api.md](../api.md#which-site)).
 
 ## Fediverse page
 

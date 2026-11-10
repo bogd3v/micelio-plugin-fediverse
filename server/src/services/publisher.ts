@@ -71,9 +71,10 @@ export interface FanOut {
 export async function sendToFollowers(
   strapi: Core.Strapi,
   activity: Activity,
-  extra: ExtraRecipient[] = []
+  extra: ExtraRecipient[] = [],
+  site?: string
 ): Promise<FanOut> {
-  const followers = await listFollowers(strapi)
+  const followers = await listFollowers(strapi, { site })
   const reachable = followers.filter((follower) => follower.unreachableSince == null)
   const skipped = followers.length - reachable.length
   if (reachable.length === 0 && extra.length === 0) return { queued: 0, skipped }
@@ -104,13 +105,14 @@ async function sendRecorded(
   documentId: string,
   type: FederatedActivityType,
   activity: Activity,
-  firstPublishedAt?: string
+  firstPublishedAt?: string,
+  site?: string
 ): Promise<FanOut> {
-  const activityAt = await recordSend(strapi, documentId, type, firstPublishedAt)
+  const activityAt = await recordSend(strapi, documentId, type, firstPublishedAt, site)
   try {
-    return await sendToFollowers(strapi, activity)
+    return await sendToFollowers(strapi, activity, [], site)
   } catch (error) {
-    await recordFailure(strapi, documentId, activityAt, error)
+    await recordFailure(strapi, documentId, activityAt, error, site)
     throw error
   }
 }
@@ -139,16 +141,18 @@ export type FederateOutcome =
  * sent, was retracted or its `Create` failed, an `Update` otherwise (`activityTypeFor`), because
  * publishing again is how edits go live in Strapi 5. Used by the publish event and by the admin panel's "Federate now".
  *
+ * @param site - The `documentId` of the site whose followers get it; the default site when omitted.
  * @returns `not-federable` when the default locale has no published version with a title and slug.
  */
 export async function federateArticle(
   strapi: Core.Strapi,
-  documentId: string
+  documentId: string,
+  site?: string
 ): Promise<FederateOutcome> {
   const record = await findPublishedArticle(strapi, documentId)
   if (record == null) return { status: 'not-federable' }
 
-  const type = activityTypeFor(await findFederatedArticle(strapi, documentId))
+  const type = activityTypeFor(await findFederatedArticle(strapi, documentId, site))
   const ctx = createContext(strapi)
   const objectType = await getObjectType(strapi)
   const fanOut = await sendRecorded(
@@ -162,7 +166,8 @@ export async function federateArticle(
       record,
       objectType
     ),
-    record.firstPublishedAt
+    record.firstPublishedAt,
+    site
   )
   strapi.log.info(
     `[fediverse] ${type}(${objectType === 'note' ? 'Note' : 'Article'}) for ${documentId} (${record.slug}): ${describeFanOut(fanOut)}`
@@ -185,12 +190,15 @@ export type RetryOutcome =
  * `federateArticle`, the same path as "Federate now", so it is queued like any publish and skips
  * unreachable followers. Fedify reports no success, so the row says `created`, `updated` or
  * `deleted` (queued) at once and turns `failed` again only if Fedify gives up again.
+ *
+ * @param site - The `documentId` of the site; the default site when omitted.
  */
 export async function retryFailedDelivery(
   strapi: Core.Strapi,
-  documentId: string
+  documentId: string,
+  site?: string
 ): Promise<RetryOutcome> {
-  const row = await findFederatedArticle(strapi, documentId)
+  const row = await findFederatedArticle(strapi, documentId, site)
   if (row == null || row.status !== 'failed') return { status: 'not-failed' }
 
   if (
@@ -202,7 +210,9 @@ export async function retryFailedDelivery(
       strapi,
       documentId,
       'Delete',
-      buildDeleteActivity(ctx, ACTOR_IDENTIFIER, documentId)
+      buildDeleteActivity(ctx, ACTOR_IDENTIFIER, documentId),
+      undefined,
+      site
     )
     strapi.log.info(
       `[fediverse] Delete(Article) for ${documentId} retried: ${describeFanOut(fanOut)}`
@@ -210,7 +220,7 @@ export async function retryFailedDelivery(
     return { status: 'queued', type: 'Delete', fanOut }
   }
 
-  const outcome = await federateArticle(strapi, documentId)
+  const outcome = await federateArticle(strapi, documentId, site)
   return outcome.status === 'queued'
     ? { status: 'queued', type: outcome.type, fanOut: outcome.fanOut }
     : { status: 'not-federable' }

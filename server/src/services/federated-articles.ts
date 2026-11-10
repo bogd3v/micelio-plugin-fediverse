@@ -7,6 +7,7 @@ import type {
   FederatedArticleStatus,
 } from '../types/federated-articles'
 import { describeDeliveryError } from '../utils/delivery-error'
+import { inSite, resolveSite, siteRowId } from './sites'
 
 /** Plugin store key that held the federated article ids before the content type. */
 const LEGACY_STORE_KEY = 'federatedArticles'
@@ -33,10 +34,11 @@ function query(strapi: Core.Strapi) {
  */
 async function settleDuplicates(
   strapi: Core.Strapi,
+  site: string,
   articleDocumentId: string
 ): Promise<FederatedArticleRow> {
   const rows = (await query(strapi).findMany({
-    where: { articleDocumentId },
+    where: { ...inSite(site), articleDocumentId },
     orderBy: { id: 'asc' },
   })) as FederatedArticleRow[]
   const [oldest, ...duplicates] = rows
@@ -49,10 +51,11 @@ async function settleDuplicates(
 /** The federation row of an article, or `null` when no activity was ever queued for it. */
 export async function findFederatedArticle(
   strapi: Core.Strapi,
-  articleDocumentId: string
+  articleDocumentId: string,
+  site?: string
 ): Promise<FederatedArticleRow | null> {
   return (await query(strapi).findOne({
-    where: { articleDocumentId },
+    where: { ...inSite(await resolveSite(strapi, site)), articleDocumentId },
     orderBy: { id: 'asc' },
   })) as FederatedArticleRow | null
 }
@@ -64,14 +67,16 @@ export async function findFederatedArticle(
  */
 export async function findFirstPublished(
   strapi: Core.Strapi,
-  articleDocumentIds: string[]
+  articleDocumentIds: string[],
+  siteId?: string
 ): Promise<Map<string, string>> {
   const first = new Map<string, string>()
   // The model exists only while the plugin is enabled; the article builders are also read without it.
   if (articleDocumentIds.length === 0 || !strapi.db.metadata.has(FEDERATED_ARTICLE_UID))
     return first
+  const site = await resolveSite(strapi, siteId)
   const rows = (await query(strapi).findMany({
-    where: { articleDocumentId: { $in: articleDocumentIds } },
+    where: { ...inSite(site), articleDocumentId: { $in: articleDocumentIds } },
     orderBy: { id: 'asc' },
   })) as FederatedArticleRow[]
   for (const row of rows) {
@@ -85,10 +90,11 @@ export async function findFirstPublished(
 /** The most recent rows whose last activity ended `failed`, newest first. */
 export async function listFailedRows(
   strapi: Core.Strapi,
-  limit: number
+  limit: number,
+  site?: string
 ): Promise<FederatedArticleRow[]> {
   return (await query(strapi).findMany({
-    where: { status: 'failed' },
+    where: { ...inSite(await resolveSite(strapi, site)), status: 'failed' },
     orderBy: { lastActivityAt: 'desc' },
     limit,
   })) as FederatedArticleRow[]
@@ -112,10 +118,11 @@ export function activityTypeFor(row: FederatedArticleRow | null): 'Create' | 'Up
 /** Whether the article has been sent and not retracted, so a re-publish becomes an `Update`. */
 export async function isFederated(
   strapi: Core.Strapi,
-  articleDocumentId: string
+  articleDocumentId: string,
+  site?: string
 ): Promise<boolean> {
   const row = (await query(strapi).findOne({
-    where: { articleDocumentId },
+    where: { ...inSite(await resolveSite(strapi, site)), articleDocumentId },
     orderBy: { id: 'asc' },
   })) as FederatedArticleRow | null
   // A failed delivery still counts: the article may have reached some followers.
@@ -135,13 +142,16 @@ export async function isFederated(
  * activity and the served object repeat.
  *
  * @param firstPublishedAt - For a `Create`, the `published` its object carries.
+ * @param siteId - The `documentId` of the site; the default site when omitted.
  */
 export async function recordSend(
   strapi: Core.Strapi,
   articleDocumentId: string,
   type: FederatedActivityType,
-  firstPublishedAt?: string
+  firstPublishedAt?: string,
+  siteId?: string
 ): Promise<string> {
+  const site = await resolveSite(strapi, siteId)
   const now = new Date().toISOString()
   // What the `Create` carried as `published`: later activities repeat it (#321).
   const createSentAt = firstPublishedAt ?? now
@@ -154,7 +164,7 @@ export async function recordSend(
   }
 
   const existing = (await query(strapi).findOne({
-    where: { articleDocumentId },
+    where: { ...inSite(site), articleDocumentId },
     orderBy: { id: 'asc' },
   })) as FederatedArticleRow | null
   if (existing) {
@@ -166,9 +176,14 @@ export async function recordSend(
   }
 
   const created = (await query(strapi).create({
-    data: { articleDocumentId, createSentAt: type === 'Create' ? createSentAt : null, ...data },
+    data: {
+      articleDocumentId,
+      createSentAt: type === 'Create' ? createSentAt : null,
+      site: await siteRowId(strapi, site),
+      ...data,
+    },
   })) as FederatedArticleRow
-  const oldest = await settleDuplicates(strapi, articleDocumentId)
+  const oldest = await settleDuplicates(strapi, site, articleDocumentId)
   if (oldest.id !== created.id) {
     await query(strapi).update({ where: { id: oldest.id }, data })
   }
@@ -184,10 +199,15 @@ export async function recordFailure(
   strapi: Core.Strapi,
   articleDocumentId: string,
   activityAt: string,
-  error: unknown
+  error: unknown,
+  site?: string
 ): Promise<void> {
   await query(strapi).update({
-    where: { articleDocumentId, lastActivityAt: activityAt },
+    where: {
+      ...inSite(await resolveSite(strapi, site)),
+      articleDocumentId,
+      lastActivityAt: activityAt,
+    },
     data: { status: 'failed', lastError: describeDeliveryError(error) },
   })
 }
@@ -208,15 +228,17 @@ export async function recordFailure(
  *
  * @param attempts - Delivery attempts made or scheduled for that inbox.
  * @param abandoned - Whether Fedify will not try that inbox again.
+ * @param site - The `documentId` of the site; the default site when omitted.
  */
 export async function recordDeliveryFailure(
   strapi: Core.Strapi,
   articleDocumentId: string,
   type: FederatedActivityType,
-  { attempts, abandoned, error }: { attempts: number; abandoned: boolean; error: unknown }
+  { attempts, abandoned, error }: { attempts: number; abandoned: boolean; error: unknown },
+  site?: string
 ): Promise<void> {
   const row = (await query(strapi).findOne({
-    where: { articleDocumentId },
+    where: { ...inSite(await resolveSite(strapi, site)), articleDocumentId },
     orderBy: { id: 'asc' },
   })) as FederatedArticleRow | null
   if (row == null || row.lastActivityType !== type) return
@@ -240,9 +262,14 @@ function legacyIds(value: unknown): string[] {
  * has a row is left untouched, and the key stays in place for one release line
  * so a rollback still finds it.
  *
+ * @param siteId - The `documentId` of the site the rows belong to; the default site when omitted.
  * @returns How many rows were created.
  */
-export async function migrateFederatedArticles(strapi: Core.Strapi): Promise<number> {
+export async function migrateFederatedArticles(
+  strapi: Core.Strapi,
+  siteId?: string
+): Promise<number> {
+  const site = await resolveSite(strapi, siteId)
   const stored: unknown = await strapi
     .store({ type: 'plugin', name: 'fediverse' })
     .get({ key: LEGACY_STORE_KEY })
@@ -260,9 +287,15 @@ export async function migrateFederatedArticles(strapi: Core.Strapi): Promise<num
     )
     for (const articleDocumentId of chunk.filter((id) => !known.has(id))) {
       await query(strapi).create({
-        data: { articleDocumentId, status: 'created', createSentAt: null, attempts: 0 },
+        data: {
+          articleDocumentId,
+          status: 'created',
+          createSentAt: null,
+          attempts: 0,
+          site: await siteRowId(strapi, site),
+        },
       })
-      await settleDuplicates(strapi, articleDocumentId)
+      await settleDuplicates(strapi, site, articleDocumentId)
       created += 1
     }
   }

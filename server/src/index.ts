@@ -1,4 +1,5 @@
 import type { Core } from '@strapi/strapi'
+import { withSiteScope } from '@micelio/strapi-plugin-core/strapi-server'
 
 import federatedArticleSchema from './content-types/federated-article/schema.json'
 import followerSchema from './content-types/follower/schema.json'
@@ -11,7 +12,12 @@ import { assertActorConfigured } from './constants/actor'
 import { mountFediverseMiddleware, startFederationQueue, stopFederation } from './federation'
 import actorProfile from './services/actor-profile'
 import { registerPermissionActions } from './services/permissions'
-import federatedArticles, { migrateFederatedArticles } from './services/federated-articles'
+import defaultSiteService, {
+  adoptDefaultSite,
+  migrateStoredArticles,
+  onSiteCreated,
+} from './services/default-site'
+import federatedArticles from './services/federated-articles'
 import followers from './services/followers'
 import interactions from './services/interactions'
 import keys, { encryptStoredActorKeys } from './services/keys'
@@ -27,6 +33,9 @@ import { configureFedifyLogging, resetFedifyLogging } from './utils/fedify-loggi
 import { assertNoRemovedActorVariables } from './utils/removed-variables'
 import { frontendBaseUrl } from './utils/frontend-url'
 import { handleHost } from './utils/handle-host'
+
+/** Removes the handler of the core's `siteCreated` hook. */
+let stopSiteCreated: (() => void) | undefined
 
 const plugin = {
   register({ strapi }: { strapi: Core.Strapi }): void {
@@ -47,6 +56,13 @@ const plugin = {
     strapi.server.use(mountFediverseMiddleware(strapi))
     // Fedify reports refused signatures and failed fetches only through LogTape.
     configureFedifyLogging(strapi.log)
+    // The core's `hooks` service exists from the start, whatever the order of the plugins.
+    stopSiteCreated = strapi
+      .plugin('micelio')
+      .service('hooks')
+      .on('siteCreated', (payload: { site: string; isDefault: boolean }) =>
+        onSiteCreated(strapi, payload)
+      )
   },
 
   async bootstrap({ strapi }: { strapi: Core.Strapi }): Promise<void> {
@@ -55,7 +71,10 @@ const plugin = {
     subscribeReplies(strapi)
     // A key pair stored before encryption at rest is encrypted now, not at first use.
     await encryptStoredActorKeys(strapi)
-    await migrateFederatedArticles(strapi)
+    // Strapi does not order plugins: the core may not have created the default site yet. Then this
+    // does nothing, and the `siteCreated` hook (see `register`) runs it once the site exists.
+    await adoptDefaultSite(strapi)
+    await migrateStoredArticles(strapi)
     await registerPermissionActions(strapi)
     // After the migrations: a message left by the previous run is delivered from here on.
     startFederationQueue(strapi)
@@ -63,6 +82,8 @@ const plugin = {
   },
 
   async destroy({ strapi }: { strapi: Core.Strapi }): Promise<void> {
+    stopSiteCreated?.()
+    stopSiteCreated = undefined
     unsubscribe()
     unsubscribePublisher()
     unsubscribeReplies()
@@ -72,13 +93,13 @@ const plugin = {
 
   contentTypes: {
     'federated-article': {
-      schema: federatedArticleSchema,
+      schema: withSiteScope(federatedArticleSchema),
     },
     follower: {
-      schema: followerSchema,
+      schema: withSiteScope(followerSchema),
     },
     interaction: {
-      schema: interactionSchema,
+      schema: withSiteScope(interactionSchema),
     },
   },
 
@@ -103,6 +124,7 @@ const plugin = {
     followers,
     'actor-profile': actorProfile,
     stats: statsService,
+    'default-site': defaultSiteService,
   },
 }
 

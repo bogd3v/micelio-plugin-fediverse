@@ -7,6 +7,7 @@ import { runDiagnostics } from '../services/diagnostics'
 import { listFailedRows } from '../services/federated-articles'
 import { listFollowerRows, setActorBlocked } from '../services/followers'
 import { retryFailedDelivery } from '../services/publisher'
+import { siteOfRequest } from '../services/sites'
 import type { FailureRow, FollowerRow, RetryResult } from '../types/plugin-page'
 import { sendProblem, type ProblemContext } from '../utils/problem'
 
@@ -15,6 +16,7 @@ const FAILURES_LIMIT = 50
 
 interface Context extends ProblemContext {
   params: Record<string, string>
+  query: Record<string, unknown>
   /** The admin's ability; a plugin permission has no subject, so `can` takes the action alone. */
   state: { userAbility?: { can(action: string): boolean } }
 }
@@ -58,10 +60,19 @@ export default ({
     return titles
   }
 
+  /** The site the request is for (`?site=<slug>`, else the default one); answers `404` when unknown. */
+  async function siteOf(ctx: Context): Promise<string | null> {
+    const site = await siteOfRequest(strapi, ctx)
+    if (site == null) sendProblem(ctx, 404, 'unknown-site', 'There is no such site.')
+    return site
+  }
+
   function setBlocked(blocked: boolean): Handler {
     return async (ctx) => {
       if (!allowed(ctx, PERMISSION_MANAGE)) return
-      if (!(await setActorBlocked(strapi, ctx.params.documentId, blocked))) {
+      const site = await siteOf(ctx)
+      if (site == null) return
+      if (!(await setActorBlocked(strapi, ctx.params.documentId, blocked, site))) {
         sendProblem(ctx, 404, 'follower-not-found', 'There is no such follower.')
         return
       }
@@ -72,12 +83,16 @@ export default ({
   return {
     async diagnostics(ctx) {
       if (!allowed(ctx, PERMISSION_READ)) return
-      ctx.body = { checks: await runDiagnostics(strapi) }
+      const site = await siteOf(ctx)
+      if (site == null) return
+      ctx.body = { checks: await runDiagnostics(strapi, site) }
     },
 
     async followers(ctx) {
       if (!allowed(ctx, PERMISSION_READ)) return
-      const rows = await listFollowerRows(strapi)
+      const site = await siteOf(ctx)
+      if (site == null) return
+      const rows = await listFollowerRows(strapi, site)
       const followers: FollowerRow[] = rows.map((row) => ({
         documentId: row.documentId,
         handle: row.handle,
@@ -94,7 +109,9 @@ export default ({
 
     async failures(ctx) {
       if (!allowed(ctx, PERMISSION_READ)) return
-      const rows = await listFailedRows(strapi, FAILURES_LIMIT)
+      const site = await siteOf(ctx)
+      if (site == null) return
+      const rows = await listFailedRows(strapi, FAILURES_LIMIT, site)
       const titles = await titlesOf(rows.map((row) => row.articleDocumentId))
       const failures: FailureRow[] = rows.map((row) => ({
         articleDocumentId: row.articleDocumentId,
@@ -109,9 +126,11 @@ export default ({
 
     async retry(ctx) {
       if (!allowed(ctx, PERMISSION_MANAGE)) return
+      const site = await siteOf(ctx)
+      if (site == null) return
       let outcome
       try {
-        outcome = await retryFailedDelivery(strapi, ctx.params.documentId)
+        outcome = await retryFailedDelivery(strapi, ctx.params.documentId, site)
       } catch (error) {
         strapi.log.error(
           `[fediverse] retry for ${ctx.params.documentId} failed: ${error instanceof Error ? error.name : 'unknown error'}`

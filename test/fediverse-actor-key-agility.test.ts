@@ -7,7 +7,7 @@ import { encryptText } from '../server/src/utils/key-encryption'
 const ACTIVITY_JSON = 'application/activity+json'
 /** Neutral actor handle and URI path, set before Strapi boots so WebFinger and the actor URL agree. */
 const ACTOR_IDENTIFIER = 'actor'
-const CORE_STORE_KEY = 'plugin_fediverse_keyPairs'
+const CORE_STORE_KEY_PREFIX = 'plugin_fediverse_'
 /** The body of every key failure: the cause is only in the server log. */
 const GENERIC_BODY = 'Internal Server Error'
 
@@ -33,13 +33,25 @@ interface StoredEntry {
   generatedAt: string
 }
 
+/** The plugin store key of the default site's actor key: one entry per site, `keyPairs:<site>`. */
+async function actorKeyStoreKey(): Promise<string> {
+  const site = (await strapi.db
+    .query('plugin::micelio.site')
+    .findOne({ where: { isDefault: true }, select: ['documentId'] })) as { documentId: string }
+  return `keyPairs:${site.documentId}`
+}
+
 /** The core store row exactly as the database holds it. */
 async function rawRow(): Promise<{ id: number; value: string } | null> {
-  return strapi.db.query('strapi::core-store').findOne({ where: { key: CORE_STORE_KEY } })
+  return strapi.db
+    .query('strapi::core-store')
+    .findOne({ where: { key: `${CORE_STORE_KEY_PREFIX}${await actorKeyStoreKey()}` } })
 }
 
 async function writeEntries(value: StoredEntry[]): Promise<void> {
-  await strapi.store({ type: 'plugin', name: 'fediverse' }).set({ key: 'keyPairs', value })
+  await strapi
+    .store({ type: 'plugin', name: 'fediverse' })
+    .set({ key: await actorKeyStoreKey(), value })
 }
 
 /** A stored entry as the plugin writes it: public JWK plain, private JWK encrypted. */

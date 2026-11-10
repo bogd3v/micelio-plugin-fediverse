@@ -16,6 +16,10 @@ The outbox cursor (`/fediverse/user/<handle>/outbox?cursor=N`) is an offset and 
 
 `replies` counts approved comments with a `fediverseUri` (every fediverse reply has one, even when its actor handle could not be resolved) that are not removed or blocked. Blocked actors' likes, boosts and replies never count.
 
+### Which site
+
+The three routes belong to a site like every content API route of a Micelio plugin: `?site=<slug>` names it, else the host of the request does, else the default site (`docs/api.md` of `@micelio/strapi-plugin-core`, "Which site a request is for"), and a slug no site has answers `404` with the code `unknownSite`. They count only the interactions and the blocked actors of that site, so a frontend that names no site sees the default site's, as before the sites existed.
+
 ## Federation endpoints
 
 Served by Fedify, outside Strapi's authentication and permissions, for remote servers rather than for a frontend. The actor path uses `FEDIVERSE_ACTOR_IDENTIFIER` (the examples say `blog`).
@@ -36,4 +40,4 @@ The ids in this table are contracts that never change ([architecture/federation.
 
 ## Admin routes
 
-The admin panel calls the routes under `/fediverse-panel`. They need an admin session and are not for integrators; they are listed with their permissions in [architecture/federation.md](architecture/federation.md#article-panel) and [Plugin page](architecture/federation.md#plugin-page).
+The admin panel calls the routes under `/fediverse-panel`. They need an admin session and are not for integrators. Those of the Fediverse page and of an article's panel act for the default site, or for the site `?site=<slug>` names (a slug no site has answers `404`, code `unknown-site`); they are listed with their permissions in [architecture/federation.md](architecture/federation.md#article-panel) and [Plugin page](architecture/federation.md#plugin-page).

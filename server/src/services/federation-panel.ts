@@ -24,16 +24,18 @@ export async function federateBlocker(
  * fediverse counts and whether it can be federated now.
  *
  * @param locale - The locale the editor has open.
+ * @param site - The `documentId` of the site; the default site when omitted.
  */
 export async function describeFederation(
   strapi: Core.Strapi,
   documentId: string,
-  locale: string
+  locale: string,
+  site?: string
 ): Promise<ArticleFederation> {
   const [row, interactions, replies, blocker] = await Promise.all([
-    findFederatedArticle(strapi, documentId),
-    countInteractions(strapi, documentId),
-    replyCountsByStatus(strapi, documentId),
+    findFederatedArticle(strapi, documentId, site),
+    countInteractions(strapi, documentId, site),
+    replyCountsByStatus(strapi, documentId, site),
     federateBlocker(strapi, documentId, locale),
   ])
 
