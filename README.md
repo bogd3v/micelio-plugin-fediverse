@@ -2,7 +2,7 @@
 
 Micelio's fediverse federation (ActivityPub) as a Strapi 5 plugin.
 
-This is the plugin that ran inside `micelio-cms` as `src/plugins/fediverse`, moved with no change of behaviour (the first step of the cut-over of ADR-0017). It is not published yet.
+This is the plugin that ran inside `micelio-cms` as `src/plugins/fediverse`, moved out of the CMS in the cut-over of ADR-0017. It is released on npm as `@micelio/strapi-plugin-fediverse` from `0.7.0`; this is the `0.7` line, which declares `"micelio": "0.7"` (the Micelio release line it belongs to). The release notes and the upgrade steps from the plugin inside `micelio-cms` are in [docs/operate/upgrade-0.7.md](docs/operate/upgrade-0.7.md).
 
 ## What it needs from the host
 
@@ -11,6 +11,30 @@ The plugin reads and writes content types it does not own, so a host provides th
 - `@micelio/strapi-plugin-core` (the default site, where the actor's profile and the object type live), `strapi-plugin-comments` (fediverse replies are stored as comments) and Strapi's `i18n`.
 - `api::article.article` (`title`, `slug`, `description`, `cover`, `coverCredit`, `seo`, `category`, `tags`) and the single type `api::global.global` (`siteName`, `siteDescription`, `favicon`).
 - The comments plugin extended with `fediverseUri`, `fediverseActorHandle`, `fediverseNoteUri` and `fediverseNoteRetracted`, and a middleware that hides `PENDING` and `REJECTED` comments from its public API. `test/app/` is a minimal host that does all of it.
+
+## Install and enable
+
+1. Install the package at an exact version, with the plugins it builds on (see above) already in the host:
+
+   ```bash
+   npm install --save-exact @micelio/strapi-plugin-fediverse@0.7.0
+   ```
+
+   The peer range of `@micelio/strapi-plugin-core` is `^0.2.0`, the core the suites run on.
+
+2. List it in `config/plugins.ts` as always enabled. The plugin reads `FEDIVERSE_ENABLED` itself, so its admin code is bundled whatever the variable is when the admin is built:
+
+   ```ts
+   export default () => ({
+     fediverse: { enabled: true },
+   })
+   ```
+
+3. Set the variables of [.env.example](.env.example): `FEDIVERSE_ENABLED=true`, `FEDIVERSE_ACTOR_IDENTIFIER` (the actor's address; never change it afterwards), `URL` (the public origin of Strapi) and `FRONTEND_URL`. Set `proxy: { koa: true }` in `config/server` behind a TLS-terminating proxy.
+
+4. Build the admin and start Strapi. The page is **Fediverse** under **Site** in the Micelio sub-navigation. The host's root admin app does not register it: the package's `./strapi-admin` entry does. Content Manager → Sites → your site → **Fediverse** holds the profile (username, display name, summary, source URL, header); the site's **Hosts** hold the handle host (the first one).
+
+5. Check that `GET /.well-known/webfinger?resource=acct:<user>@<handle host>` answers 200 on the site's domain (the frontend's route serves it) and read [docs/operate/configure.md](docs/operate/configure.md) for the rest (the delivery queue, what to check after enabling).
 
 ## Configuration
 
@@ -26,7 +50,7 @@ The plugin is named `fediverse`, so its content types are `plugin::fediverse.fol
 | `FRONTEND_DEFAULT_LOCALE`    | `en`                                                      | Deprecated: the site's Default locale is read first; this only when the site has none.                               |
 | `ENCRYPTION_KEY`             | required                                                  | Strapi's own: the actor's private key is stored encrypted with it.                                                   |
 
-The variables `FEDIVERSE_ACTOR_USERNAME`, `FEDIVERSE_ACTOR_NAME`, `FEDIVERSE_ACTOR_SUMMARY` and `FEDIVERSE_ACTOR_SOURCE_URL` are removed: a boot with one set stops, naming the field of the default site that replaces it (`server/src/utils/removed-variables.ts`). `FEDIVERSE_HANDLE_HOST` and the attribution list are dropped in 0.7 for the site's `hosts`: [docs/operate/upgrade-0.7.md](docs/operate/upgrade-0.7.md).
+The variables `FEDIVERSE_ACTOR_USERNAME`, `FEDIVERSE_ACTOR_NAME`, `FEDIVERSE_ACTOR_SUMMARY` and `FEDIVERSE_ACTOR_SOURCE_URL` are removed: a boot with one set stops, naming the field of the default site that replaces it (`server/src/utils/removed-variables.ts`). `FEDIVERSE_HANDLE_HOST` and the attribution list are dropped in 0.7 for the site's `hosts` (the first 0.7 boot pins your handle host as the first one; remove the variable afterwards), and `FRONTEND_DEFAULT_LOCALE` is deprecated for the site's Default locale. Kept: `FEDIVERSE_ENABLED`, `FEDIVERSE_ACTOR_IDENTIFIER`, `URL`, `FRONTEND_URL`, `FRONTEND_ARTICLE_PATH` and `ENCRYPTION_KEY`. Details: [docs/operate/upgrade-0.7.md](docs/operate/upgrade-0.7.md).
 
 ## Documentation
 
