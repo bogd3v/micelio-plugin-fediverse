@@ -33,7 +33,6 @@
   "fediverse.panel.problem.locale-not-federated": "Only the default language is federated.",
   "fediverse.panel.problem.queue-unavailable": "The delivery queue is not available right now. Try again in a moment.",
   "fediverse.panel.problem.unknown": "Something went wrong.",
-  "fediverse.page.menu": "Fediverse",
   "fediverse.page.title": "Fediverse",
   "fediverse.page.subtitle": "Is federation working, who follows the blog, and what failed.",
   "fediverse.page.loading": "Loading…",

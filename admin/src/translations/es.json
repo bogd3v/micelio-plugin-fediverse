@@ -33,7 +33,6 @@
   "fediverse.panel.problem.locale-not-federated": "Solo se federa el idioma por defecto.",
   "fediverse.panel.problem.queue-unavailable": "La cola de entrega no está disponible ahora. Inténtalo de nuevo en un momento.",
   "fediverse.panel.problem.unknown": "Algo salió mal.",
-  "fediverse.page.menu": "Fediverso",
   "fediverse.page.title": "Fediverso",
   "fediverse.page.subtitle": "Si la federación funciona, quién sigue el blog y qué falló.",
   "fediverse.page.loading": "Cargando…",

@@ -64,7 +64,7 @@ describe('Fediverse federation (Phase 1: actor, keys, followers)', () => {
   let followersService: ReturnType<typeof followers>
 
   beforeAll(async () => {
-    // Enable the fediverse plugin before Strapi boots (config/plugins.ts reads it).
+    // Enable the fediverse plugin before Strapi boots (the plugin reads it when it loads, `server/src/utils/federation-enabled.ts`).
     process.env.FEDIVERSE_ENABLED = 'true'
     process.env.FEDIVERSE_ACTOR_IDENTIFIER = process.env.FEDIVERSE_ACTOR_IDENTIFIER || 'devbog'
     process.env.FRONTEND_URL = 'https://blog.example.test'

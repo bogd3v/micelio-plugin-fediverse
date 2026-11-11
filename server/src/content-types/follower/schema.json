@@ -13,6 +13,9 @@
   "pluginOptions": {
     "content-manager": {
       "visible": true
+    },
+    "micelio": {
+      "export": "never"
     }
   },
   "attributes": {

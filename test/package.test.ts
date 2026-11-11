@@ -80,6 +80,19 @@ describe('the packed package', () => {
     ).toEqual([])
   })
 
+  it('ships the admin entry as the ./strapi-admin export, for Strapi to bundle', () => {
+    const files = packed.files.map((file) => file.path)
+    expect(files).toEqual(expect.arrayContaining(['dist/strapi-admin.mjs', 'dist/strapi-admin.js']))
+    expect(packageJson.exports['./strapi-admin']).toEqual({
+      import: './dist/strapi-admin.mjs',
+      require: './dist/strapi-admin.js',
+      default: './dist/strapi-admin.js',
+    })
+    for (const file of ['dist/strapi-admin.mjs', 'dist/strapi-admin.js']) {
+      expect(fs.existsSync(path.join(INSTALLED, file)), file).toBe(true)
+    }
+  })
+
   it('loads the plugin from the unpacked tarball, under the name fediverse', () => {
     const enabled =
       strapi.config.get<Record<string, { packageInfo?: { name?: string }; pathToPlugin?: string }>>(

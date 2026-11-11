@@ -11,7 +11,7 @@ The rules shared by every Micelio repository live in [`docs/engineering-standard
 ```bash
 npm ci
 npm run check            # typecheck, lint, format:check, test, lint:licenses and lint:standard
-npm run build            # bundles server/src to dist/strapi-server.js (esbuild)
+npm run build            # bundles server/src and admin/src to dist/ (esbuild, scripts/build.mjs)
 npm run dev              # the same, rebuilding on change
 npm test                 # builds, then runs the suites; one suite: npx vitest run test/fediverse.test.ts
 ```
@@ -22,12 +22,12 @@ The `test` script sets `UV_THREADPOOL_SIZE=64`: Vitest runs one worker per core 
 
 ## Structure
 
-- `server/src/` — the plugin's server (entry `index.ts`; `constants/`, `types/`, `services/`, `controllers/`, `routes/`, `utils/`, `content-types/`). It is its own TypeScript project (`server/tsconfig.json`) bundled by esbuild into `dist/strapi-server.js`, the package's `./strapi-server` export. It never imports from a host's `src/`.
-- `admin/src/` — the admin panel and page (`admin/tsconfig.json`). It is type-checked but not built or exported yet: the issues that follow decide how a host receives it.
+- `server/src/` — the plugin's server (entry `index.ts`; `constants/`, `types/`, `services/`, `controllers/`, `routes/`, `utils/`, `content-types/`). It is its own TypeScript project (`server/tsconfig.json`) bundled by esbuild into `dist/strapi-server.js`, the package's `./strapi-server` export. The host lists the plugin as always enabled: it reads `FEDIVERSE_ENABLED` itself. It never imports from a host's `src/`.
+- `admin/src/` — the admin panel and page (`admin/tsconfig.json`). The admin entry (`index.ts`: the Fediverse page and the article panel) is bundled into `dist/strapi-admin.mjs` and `.js`, the package's `./strapi-admin` export.
 - `docs/` — the documents, filed by reader: `architecture/federation.md` (how the plugin works, for contributors; the findings behind each decision), `api.md` (the public routes), `operate/configure.md` (the operator: what the host provides, every variable, enabling, the delivery queue) and `operate/upgrade-0.7.md` (the upgrade notes of 0.7) and `security/` (`logging.md`, the `[fediverse]` log lines and the security event; `keys.md`, the actor key and its algorithms; `data.md`, the data the plugin holds and its levels), plus the shared standard (`engineering-standard.md`, `standard/`).
 - `.claude/skills/strapi-fediverse/` — the skill for federation work, with the `fediverse` agent (`.claude/agents/fediverse.md`).
 - `test/` — the suites (`fediverse-*.test.ts`, `package.test.ts`), `strapi.ts` (boots the clean Strapi) and `helpers/`. `test/app/` is that clean Strapi 5 on SQLite: the plugin, `@micelio/strapi-plugin-core`, `strapi-plugin-comments` and users-permissions, with the content types and middlewares a host provides (see the README). `test/app/types/generated/` is written by `strapi ts:generate-types` (run it in `test/app` with `FEDIVERSE_ENABLED=true` and `FEDIVERSE_ACTOR_IDENTIFIER` set) when a content type of the app changes.
-- `scripts/` — `check-licenses.mjs` (`npm run lint:licenses`) and `release/version.mjs` (the release plan, read by the Release workflow).
+- `scripts/` — `build.mjs` (`npm run build`), `check-licenses.mjs` (`npm run lint:licenses`) and `release/version.mjs` (the release plan, read by the Release workflow).
 - `.github/workflows/` — `ci.yml`, `release.yml` and `pr-labels.yml`; CI calls the reusable workflows of `micelio-engineering`.
 
 ## Rules

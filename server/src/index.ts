@@ -9,6 +9,12 @@ import pluginPage from './controllers/plugin-page'
 import stats from './controllers/stats'
 import routes from './routes'
 import { assertActorConfigured } from './constants/actor'
+import { ADMIN_PAGE_PATH, EXTENSION_ID, EXTENSION_LABEL } from './constants/extensions'
+import { PERMISSION_READ } from './constants/permissions'
+import { registerExportSection } from './services/export-section'
+import { registerStatusChecks } from './services/status-checks'
+import { extensionsOf } from './utils/core-extensions'
+import { federationEnabled } from './utils/federation-enabled'
 import { mountFediverseMiddleware, startFederationQueue, stopFederation } from './federation'
 import actorProfile from './services/actor-profile'
 import { registerPermissionActions } from './services/permissions'
@@ -41,7 +47,7 @@ import { mountSiteLockProblems, siteLocks } from './services/site-lock'
 /** Removes the handler of the core's `siteCreated` hook. */
 let stopSiteCreated: (() => void) | undefined
 
-const plugin = {
+const enabledPlugin = {
   register({ strapi }: { strapi: Core.Strapi }): void {
     // Without an actor identity or a frontend URL the plugin would federate
     // under a made-up account or link to another site: refuse to start.
@@ -51,6 +57,16 @@ const plugin = {
     frontendBaseUrl()
     // The actor path of each site: the section is registered before Strapi builds the models.
     registerActorSection(strapi)
+    // The page in the Micelio sub-navigation, the Status card and the section of the archive.
+    extensionsOf(strapi).registerAdminPage({
+      id: EXTENSION_ID,
+      group: 'site',
+      label: EXTENSION_LABEL,
+      to: ADMIN_PAGE_PATH,
+      permission: PERMISSION_READ,
+    })
+    registerStatusChecks(strapi)
+    registerExportSection(strapi)
     // The lock of the username and the identifier, and the problem detail it is answered with.
     strapi.documents.use(siteLocks(strapi))
     strapi.server.use(mountSiteLockProblems())
@@ -140,5 +156,12 @@ const plugin = {
     'cut-over': cutOver,
   },
 }
+
+/**
+ * The plugin as Strapi loads it. It is always enabled in the host's `config/plugins.ts`, so that its
+ * admin code is bundled whatever `FEDIVERSE_ENABLED` is when the admin is built, and reads the
+ * switch itself: off, it is an empty plugin (no routes, content types, hooks or permissions).
+ */
+const plugin = federationEnabled() ? enabledPlugin : {}
 
 export default plugin
