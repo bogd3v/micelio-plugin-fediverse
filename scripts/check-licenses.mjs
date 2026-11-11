@@ -1,7 +1,8 @@
 // Fails on production dependencies whose licence is not on the allowlist of @micelio/eslint-config
 // (ADR 0007, AGPL-3.0-only). Dev dependencies are not distributed: they only warn. A package that
-// carries no licence field but whose licence was read in its repository is excepted, with the
-// reason, in scripts/licenses-allow.json (as in micelio-cms).
+// carries no licence field but whose licence was read in its repository is excepted in
+// scripts/licenses-allow.json, with the reason and the version it reviewed: a later release of that
+// package fails until it is reviewed again (as in micelio-cms).
 //
 //   node scripts/check-licenses.mjs [--lock path/to/package-lock.json] [--summary]
 import { readFileSync } from 'node:fs'
