@@ -18,6 +18,10 @@ on:
         description: Markdown bullets for Compatibility (the core line it supports, the minimum Node); required to publish
         type: string
         default: ''
+      breaking_changes:
+        description: Hand-written Breaking changes section; required when a pull request is breaking
+        type: string
+        default: ''
       upgrade_notes:
         description: Upgrade notes for the release body (required when a pull request is breaking)
         type: string
@@ -39,5 +43,8 @@ jobs:
       dry-run: ${{ inputs.dry_run }}
       release-candidate: ${{ inputs.release_candidate }}
       compatibility: ${{ inputs.compatibility }}
+      breaking-changes: ${{ inputs.breaking_changes }}
       upgrade-notes: ${{ inputs.upgrade_notes }}
+      # The package is at the root of this repository, not a workspace.
+      npm-root: true
     secrets: inherit

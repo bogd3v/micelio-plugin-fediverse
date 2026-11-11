@@ -69,7 +69,7 @@ Conventions, commands and structure are in [AGENTS.md](AGENTS.md); the rules eve
 
 ## Releases
 
-The Release workflow (`.github/workflows/release.yml`) is started by the maintainer from the Actions tab. It defaults to a dry run that prints the version and the notes. Publishing needs a `release` environment with required reviewers (Settings → Environments), and a pull request title with a conventional prefix decides the version (section 7 of the standard).
+The Release workflow (`.github/workflows/release.yml`) is started by the maintainer from the Actions tab. It defaults to a dry run that prints the version and the notes. Publishing needs a `release` environment with required reviewers (Settings → Environments), and a pull request title with a conventional prefix decides the version (section 7 of the standard). Publishing also publishes the package to npm with provenance (`npm-root: true`, with the `NPM_TOKEN` secret of the `release` environment). The `breaking_changes` and `upgrade_notes` inputs are required when a pull request since the last release is breaking.
 
 ## License
 
