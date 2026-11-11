@@ -55,7 +55,7 @@ describe('Fediverse federation (Phase 2: article federation)', () => {
   const settle = (ms = 400) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
   beforeAll(async () => {
-    // Enable the fediverse plugin before Strapi boots (config/plugins.ts reads it).
+    // Enable the fediverse plugin before Strapi boots (the plugin reads it when it loads, `server/src/utils/federation-enabled.ts`).
     process.env.FEDIVERSE_ENABLED = 'true'
     process.env.FEDIVERSE_ACTOR_IDENTIFIER = process.env.FEDIVERSE_ACTOR_IDENTIFIER || 'devbog'
     process.env.FRONTEND_URL = 'https://blog.example.test'

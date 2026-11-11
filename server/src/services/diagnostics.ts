@@ -6,7 +6,7 @@ import { ActorKeyDecryptionError } from '../utils/key-encryption'
 import { publicOrigin } from '../utils/public-origin'
 import { countFollowers } from './followers'
 import { getActorUsername } from './actor-profile'
-import { defaultActorSite, handleHostOf } from './actor-sites'
+import { actorSiteOf, defaultActorSite, handleHostOf } from './actor-sites'
 import { countInboxRefusals } from './inbox-refusals'
 import { verifyStoredActorKey } from './keys'
 
@@ -62,12 +62,13 @@ async function checkActorKey(strapi: Core.Strapi, site?: string): Promise<Diagno
  */
 async function checkWebFinger(
   strapi: Core.Strapi,
-  origin: string | undefined
+  origin: string | undefined,
+  siteId?: string
 ): Promise<Diagnostic> {
   if (origin == null) return failed('webfinger', 'webfinger-skipped')
-  const site = await defaultActorSite(strapi)
+  const site = siteId ? await actorSiteOf(strapi, siteId) : await defaultActorSite(strapi)
   const host = handleHostOf(site ?? { hosts: [] }, origin)
-  const subject = `acct:${await getActorUsername(strapi)}@${host}`
+  const subject = `acct:${await getActorUsername(strapi, siteId)}@${host}`
   let response: Response
   try {
     response = await fetch(
@@ -121,14 +122,14 @@ async function figure(
  * Runs the checks of the plugin page, in the order it shows them. None throws: a check that
  * cannot run is a failing check with its own code.
  *
- * @param site - The `documentId` of the site whose key and followers are checked; the default site
- * when omitted.
+ * @param site - The `documentId` of the site whose key, handle and followers are checked; the
+ * default site when omitted.
  */
 export async function runDiagnostics(strapi: Core.Strapi, site?: string): Promise<Diagnostic[]> {
   const origin = publicOrigin()
   const [actorKey, webfinger, followers, refusals] = await Promise.all([
     checkActorKey(strapi, site),
-    checkWebFinger(strapi, origin),
+    checkWebFinger(strapi, origin, site),
     figure(strapi, 'followers', () => countFollowers(strapi, { site })),
     figure(strapi, 'inbox refusals', () => countInboxRefusals(getFederationKv(strapi))),
   ])
@@ -140,4 +141,19 @@ export async function runDiagnostics(strapi: Core.Strapi, site?: string): Promis
     { id: 'followers', ok: null, code: null, value: followers },
     { id: 'inbox-refusals', ok: null, code: null, value: refusals },
   ]
+}
+
+/**
+ * The three checks that can fail, for one site, without the figures: what the status checks
+ * registered with the core report. Nothing here assumes an admin user.
+ *
+ * @param site - The `documentId` of the site.
+ */
+export async function runSiteChecks(strapi: Core.Strapi, site: string): Promise<Diagnostic[]> {
+  const origin = publicOrigin()
+  const [actorKey, webfinger] = await Promise.all([
+    checkActorKey(strapi, site),
+    checkWebFinger(strapi, origin, site),
+  ])
+  return [checkPublicUrl(origin), actorKey, webfinger]
 }

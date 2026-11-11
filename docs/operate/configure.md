@@ -2,7 +2,7 @@
 
 **Kind:** how-to. For the operator of a Strapi host that installs `@micelio/strapi-plugin-fediverse`: what the host must provide, every variable, how to enable federation on a running site and what to check afterwards. How the plugin works is in [architecture/federation.md](../architecture/federation.md); the public routes are in [api.md](../api.md).
 
-The plugin is **off by default**. A host turns it on from its `config/plugins.ts` with `FEDIVERSE_ENABLED=true` (the master switch the host reads, as `test/app/config/plugins.js` does for the suites). Off, the plugin is not loaded: no fediverse routes, content types or publish hooks exist.
+The plugin is **off by default**. A host turns it on with `FEDIVERSE_ENABLED=true`, which the plugin reads itself ([What the host provides](#what-the-host-provides)). Off, the plugin is empty: no fediverse routes, content types, permissions or publish hooks exist.
 
 ## What the host provides
 
@@ -15,8 +15,14 @@ The plugin reads and writes content types it does not own, and it never imports 
 - **`proxy: { koa: true }`** in `config/server`. Behind a TLS-terminating proxy, Koa must trust it, or every ActivityPub id is generated with `http://`.
 - **A persistent store.** Followers, the actor key pair, the record of federated articles and, on PostgreSQL, the deliveries waiting to be sent live in the database. If it is wiped, the next boot generates a new actor key and every follower is lost. Each site's rows and key live in it.
 - **`ENCRYPTION_KEY`**, Strapi's own (`admin.secrets.encryptionKey`): the actor's private key is stored encrypted with it, and so are the queued deliveries. See [security/keys.md](../security/keys.md).
-- **The admin registration.** The panel in the article edit view and the Fediverse page are registered from the host's root admin app (`registerFederationPanel` and `registerFediversePage` of `admin/src/index.ts`; `src/admin/app.tsx` in `bogd3v/micelio-cms`), because Strapi bundles a local plugin's admin code only when the plugin is enabled while the admin is built. This package does not build or export its admin code yet: how a host receives it is decided by the issues that follow the move.
+- **The plugin always enabled.** The host lists the plugin in `config/plugins.ts` with `enabled: true` and no longer ties `enabled` to `FEDIVERSE_ENABLED`: Strapi bundles a plugin's admin code only when the plugin is enabled while the admin is built, and the image is built with `FEDIVERSE_ENABLED` unset. The plugin reads `FEDIVERSE_ENABLED` itself (`server/src/utils/federation-enabled.ts`): off, it is an empty plugin. A host that still sets `enabled: env.bool('FEDIVERSE_ENABLED', false)` keeps the federation working but gets no Fediverse page or article panel unless it builds the admin with the variable set.
+- **The admin registration.** The admin entry of the package (`./strapi-admin`, `admin/src/index.ts`) registers the Fediverse page with the Micelio admin plugin and the panel in the article edit view; the host's root admin app (`src/admin/app.tsx` in `bogd3v/micelio-cms`) no longer calls `registerFederationPanel` or `registerFediversePage`, which are gone, and adds no menu link or translations of the plugin.
 - **Optionally, a request guard** for rate limiting: a function registered as `plugin::fediverse.requestGuard` in the config, called on federation paths before Fedify reads the request ([architecture/federation.md](../architecture/federation.md#hosting-in-strapi)).
+
+## Status and export
+
+- **Status.** The Micelio Status page has a **Fediverse** card for every site (shown to a role with `plugin::fediverse.read`): the public address, the actor key and WebFinger of that site, run on "Run again" and on the core's daily refresh, and part of "Copy diagnostics". A failing check names its code (`url-missing`, `webfinger-unreachable`, …) and the fix. The figures (followers, refusals, queue) stay on the Fediverse page.
+- **Export.** `micelio export --include fediverse` (or the export service with `include: ['fediverse']`) writes the followers of the site, with their blocks, to `plugins/fediverse/followers.json`; an import restores them into the target site, by actor, and never lifts a block the target already holds. Without `--include` the archive holds no followers: the section is personal data and off by default, and an export dialog needs `plugin::fediverse.manage` to ask for it. **The actor key is never in the archive**; the new site has its own actor. What the file holds is in [security/data.md](../security/data.md).
 
 ## Environment variables
 
@@ -131,7 +137,7 @@ A `Create`, `Update` or `Delete` is the same whichever trigger sends it, and pub
 
 ## Fediverse page
 
-The admin menu has a **Fediverse** entry (diagnostics, followers, failed deliveries). It appears only for a role that has the permission **Read the Fediverse page** (`plugin::fediverse.read`); blocking, unblocking and retrying need **Block and unblock followers, and retry failed deliveries** (`plugin::fediverse.manage`). The super admin has both. Give them to the other roles in Settings → Administration Panel → Roles, under Plugins. They exist only while `FEDIVERSE_ENABLED=true`, so with federation off nobody sees the entry. **Turning federation off and on again removes the grants:** Strapi deletes the permissions of an action that is not registered from every role at boot, so after enabling it again only the super admin has them and the other roles must be given them again. Opening the page makes the CMS request its own WebFinger address (`URL`), once per visit.
+The Micelio sub-navigation has a **Fediverse** item under **Site** (diagnostics, followers, failed deliveries); it replaces the **Fediverse** entry the plugin used to add to the admin's main menu. It appears only for a role that has the permission **Read the Fediverse page** (`plugin::fediverse.read`); blocking, unblocking and retrying need **Block and unblock followers, and retry failed deliveries** (`plugin::fediverse.manage`). The super admin has both. Give them to the other roles in Settings → Administration Panel → Roles, under Plugins. They exist only while `FEDIVERSE_ENABLED=true`, so with federation off nobody sees the item. **Turning federation off and on again removes the grants:** Strapi deletes the permissions of an action that is not registered from every role at boot, so after enabling it again only the super admin has them and the other roles must be given them again. Opening the page makes the CMS request its own WebFinger address (`URL`), once per visit.
 
 What each failing diagnostic means and how to fix it:
 

@@ -9,9 +9,9 @@ const ACTIVITY_JSON = 'application/activity+json'
 
 describe('Fediverse federation disabled (FEDIVERSE_ENABLED=false)', () => {
   beforeAll(async () => {
-    // The plugin ships switched off (config/plugins.ts: FEDIVERSE_ENABLED defaults
-    // to false). Production runs like this until it is deliberately enabled. Read
-    // when Strapi loads its config, so it is set before booting.
+    // The plugin ships switched off (FEDIVERSE_ENABLED defaults to false). Production runs like
+    // this until it is deliberately enabled. The plugin reads it when it loads
+    // (`server/src/utils/federation-enabled.ts`), so it is set before booting.
     process.env.FEDIVERSE_ENABLED = 'false'
     await setupStrapi()
   })
@@ -21,14 +21,32 @@ describe('Fediverse federation disabled (FEDIVERSE_ENABLED=false)', () => {
     await cleanupStrapi()
   })
 
-  it('does not load the plugin or its content types', () => {
-    expect(strapi.plugin('fediverse')).toBeUndefined()
+  it('loads an empty plugin and none of its content types', () => {
+    // The host enables the plugin always (its admin code is bundled only then, issue #5) and the
+    // plugin reads the switch itself: off, it has no routes, controllers or services.
+    const plugin = strapi.plugin('fediverse')
+    expect(plugin.routes).toEqual([])
+    expect(plugin.controllers).toEqual({})
+    expect(plugin.services).toEqual({})
+    expect(plugin.contentTypes).toEqual({})
     // Not in the generated types, which describe the app with the plugin off.
     expect(strapi.contentType('plugin::fediverse.follower' as UID.ContentType)).toBeUndefined()
     expect(strapi.contentType('plugin::fediverse.interaction' as UID.ContentType)).toBeUndefined()
     expect(
       strapi.contentType('plugin::fediverse.federated-article' as UID.ContentType)
     ).toBeUndefined()
+  })
+
+  it('registers no permission action, admin page, status check or export section', () => {
+    const actions = strapi.service('admin::permission').actionProvider.keys() as string[]
+    expect(actions.filter((action) => action.startsWith('plugin::fediverse.'))).toEqual([])
+    const extensions = strapi.plugin('micelio').service('extensions') as Record<
+      'adminPages' | 'statusChecks' | 'exportSections',
+      () => { id: string }[]
+    >
+    expect(extensions.adminPages().map(({ id }) => id)).not.toContain('fediverse')
+    expect(extensions.statusChecks().map(({ id }) => id)).not.toContain('fediverse')
+    expect(extensions.exportSections().map(({ id }) => id)).not.toContain('fediverse')
   })
 
   it.each([

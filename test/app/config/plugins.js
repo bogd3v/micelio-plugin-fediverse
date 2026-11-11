@@ -3,9 +3,11 @@ const path = require('node:path')
 // The plugin as a host installs it: Strapi reads the repository's package.json and loads the
 // built `./strapi-server` export, so the suites run `npm run build` first (test/global-setup.ts).
 module.exports = ({ env }) => ({
-  // The master switch of a host (`FEDIVERSE_ENABLED`): off, the plugin is not loaded at all.
+  // Always enabled: Strapi bundles a plugin's admin code only when it is enabled while the admin is
+  // built, and a host builds it with `FEDIVERSE_ENABLED` unset. The plugin reads the switch itself:
+  // off, it is an empty plugin (no routes, content types, hooks or permissions).
   fediverse: {
-    enabled: env.bool('FEDIVERSE_ENABLED', false),
+    enabled: true,
     // The repository, or the unpacked tarball when test/package.test.ts sets FEDIVERSE_PLUGIN_PATH.
     resolve: env('FEDIVERSE_PLUGIN_PATH', path.resolve(__dirname, '../../..')),
   },

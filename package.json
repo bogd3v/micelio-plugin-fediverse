@@ -28,7 +28,12 @@
   },
   "exports": {
     "./package.json": "./package.json",
-    "./strapi-server": "./dist/strapi-server.js"
+    "./strapi-server": "./dist/strapi-server.js",
+    "./strapi-admin": {
+      "import": "./dist/strapi-admin.mjs",
+      "require": "./dist/strapi-admin.js",
+      "default": "./dist/strapi-admin.js"
+    }
   },
   "files": [
     "dist",
@@ -36,8 +41,8 @@
     "LICENSES"
   ],
   "scripts": {
-    "dev": "npm run build -- --watch",
-    "build": "esbuild server/src/index.ts --bundle --packages=external --platform=node --format=cjs --outfile=dist/strapi-server.js",
+    "dev": "node scripts/build.mjs --watch",
+    "build": "node scripts/build.mjs",
     "prepack": "npm run build",
     "typecheck": "tsc -p server/tsconfig.json && tsc -p admin/tsconfig.json && tsc -p tsconfig.json",
     "lint": "eslint .",

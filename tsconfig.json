@@ -8,6 +8,8 @@
     "moduleResolution": "Bundler",
     "target": "ES2022",
     "noEmit": true,
+    // The admin entry's components, which a suite imports with the Design System mocked.
+    "jsx": "react-jsx",
     "types": ["node"]
   },
   "include": ["test", "vitest.config.mts", "eslint.config.mjs"]

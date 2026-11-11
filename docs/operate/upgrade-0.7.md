@@ -17,6 +17,8 @@
 > | the attribution domains      | Nothing to configure: the actor lists every host of the site. The boot adds the CMS host (when you never set `FEDIVERSE_HANDLE_HOST`) and the host of `FRONTEND_URL`, after the handle host (logged, not a stop, if another site holds the latter)                                                                                                                                                                                      |
 > | `FRONTEND_DEFAULT_LOCALE`    | Deprecated: set the site's **Default locale** instead. The variable is read only when the site has none, with a warning, and a later `0.y` removes it                                                                                                                                                                                                                                                                                   |
 >
+> **The Fediverse page moves.** It is no longer an entry of the admin's main menu: it is **Fediverse** under **Site** in the Micelio sub-navigation, for the roles that have `plugin::fediverse.read` as before. The host lists the plugin as always enabled in `config/plugins.ts` (the plugin reads `FEDIVERSE_ENABLED` itself) and its root admin app stops calling `registerFederationPanel` and `registerFediversePage`: see [configure.md](configure.md#what-the-host-provides).
+>
 > Keep `FEDIVERSE_ACTOR_IDENTIFIER`: it is the actor's address, and remote servers key your followers by it. The handle host must still answer WebFinger: the frontend's route does it on the site's domain, with no proxy rule.
 
 What the draft adds to the plan, from the building of the change:
