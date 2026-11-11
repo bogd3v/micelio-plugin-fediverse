@@ -16,10 +16,11 @@ import {
 
 import { CREDIT_KINDS, LICENSES } from '../constants/licenses'
 import { ARTICLE_PATH } from '../constants/paths'
-import { ARTICLE_UID } from '../constants/uids'
+import { ARTICLE_UID, SITE_UID } from '../constants/uids'
 import type { ArticleRecord, FederatedObjectType, MediaRecord } from '../types/articles'
 import type { FederatedActivityType } from '../types/federated-articles'
 import { findFirstPublished } from './federated-articles'
+import { resolveSite } from './sites'
 import { escapeHtml } from '../utils/html'
 import { frontendBaseUrl } from '../utils/frontend-url'
 
@@ -61,17 +62,53 @@ const ARTICLE_POPULATE = {
   seo: { populate: { metaImage: true } },
 }
 
+let warnedLocaleVariable = false
+
+/**
+ * The locale the frontend serves without a prefix: `defaultLocale` of the site, and only when the
+ * site has none, `FRONTEND_DEFAULT_LOCALE` (deprecated; it logs a warning, once) and then `en`.
+ *
+ * @param site - The site's `documentId`; the default site when omitted.
+ */
+export async function frontendDefaultLocale(strapi: Core.Strapi, site?: string): Promise<string> {
+  let fromSite: string | null | undefined
+  try {
+    const row = (await strapi.documents(SITE_UID).findOne({
+      documentId: await resolveSite(strapi, site),
+    })) as { defaultLocale?: string | null } | null
+    fromSite = row?.defaultLocale
+  } catch {
+    // No site to read yet (the boot has not created it): the variable and the default still apply.
+  }
+  if (fromSite) return fromSite
+  const fromVariable = process.env.FRONTEND_DEFAULT_LOCALE?.trim()
+  if (!fromVariable) return 'en'
+  if (!warnedLocaleVariable) {
+    warnedLocaleVariable = true
+    strapi.log.warn(
+      "[fediverse] FRONTEND_DEFAULT_LOCALE is deprecated and read only because the site has no default locale: set the site's Default locale instead"
+    )
+  }
+  return fromVariable
+}
+
 /**
  * Human-facing URL of an article on the frontend (`FRONTEND_URL` +
  * `FRONTEND_ARTICLE_PATH`). The frontend serves its default locale without a
  * prefix (Nuxt i18n `prefix_except_default`) and every other locale under
- * `/<locale>`, so an article whose locale differs from `FRONTEND_DEFAULT_LOCALE`
+ * `/<locale>`, so an article whose locale differs from the site's default locale
  * gets that prefix — otherwise the link would open the wrong language.
+ *
+ * @param frontendDefault - The locale the frontend serves unprefixed, from
+ * {@link frontendDefaultLocale}; `en` when omitted.
  */
-export function getFrontendArticleUrl(slug: string, locale?: string | null): URL {
+export function getFrontendArticleUrl(
+  slug: string,
+  locale?: string | null,
+  frontendDefault: string = 'en'
+): URL {
   const base = frontendBaseUrl().replace(/\/+$/, '')
   const path = process.env.FRONTEND_ARTICLE_PATH ?? '/blog/{slug}'
-  const frontendDefault = process.env.FRONTEND_DEFAULT_LOCALE ?? 'en'
   const prefix = locale && locale !== frontendDefault ? `/${locale}` : ''
   return new URL(base + prefix + path.replace('{slug}', encodeURIComponent(slug)))
 }
@@ -85,7 +122,10 @@ function escapeRegExp(value: string): string {
  * a frontend article URL, or null if the URL isn't one of ours. Some clients
  * reply using an article's `url` rather than its ActivityPub `id`.
  */
-export function parseFrontendArticleUrl(value: string): { slug: string; locale: string } | null {
+export function parseFrontendArticleUrl(
+  value: string,
+  frontendDefault: string = 'en'
+): { slug: string; locale: string } | null {
   let url: URL
   try {
     url = new URL(value)
@@ -105,7 +145,7 @@ export function parseFrontendArticleUrl(value: string): { slug: string; locale: 
   if (!match) return null
 
   return {
-    locale: match[1] ?? process.env.FRONTEND_DEFAULT_LOCALE ?? 'en',
+    locale: match[1] ?? frontendDefault,
     slug: decodeURIComponent(match[2]),
   }
 }
@@ -115,7 +155,7 @@ export async function findArticleDocumentIdByUrl(
   strapi: Core.Strapi,
   value: string
 ): Promise<string | null> {
-  const parsed = parseFrontendArticleUrl(value)
+  const parsed = parseFrontendArticleUrl(value, await frontendDefaultLocale(strapi))
   if (!parsed) return null
   const row = (await strapi.documents(ARTICLE_UID).findFirst({
     status: 'published',
@@ -295,9 +335,10 @@ function objectOptions(
   ctx: Context<unknown>,
   actorIdentifier: string,
   record: ArticleRecord,
-  includeTitle: boolean
+  includeTitle: boolean,
+  frontendDefault?: string
 ) {
-  const url = getFrontendArticleUrl(record.slug, record.locale)
+  const url = getFrontendArticleUrl(record.slug, record.locale, frontendDefault)
   const content = [
     includeTitle ? `<p><strong>${escapeHtml(record.title)}</strong></p>` : '',
     record.description ? `<p>${escapeHtml(record.description)}</p>` : '',
@@ -356,11 +397,15 @@ export function buildArticle(
   ctx: Context<unknown>,
   actorIdentifier: string,
   record: ArticleRecord,
-  objectType: FederatedObjectType
+  objectType: FederatedObjectType,
+  frontendDefault?: string
 ): Article | Note {
   return objectType === 'note'
-    ? buildNoteShape(objectOptions(ctx, actorIdentifier, record, true))
-    : buildArticleShape(objectOptions(ctx, actorIdentifier, record, false), record.title)
+    ? buildNoteShape(objectOptions(ctx, actorIdentifier, record, true, frontendDefault))
+    : buildArticleShape(
+        objectOptions(ctx, actorIdentifier, record, false, frontendDefault),
+        record.title
+      )
 }
 
 /** The article and the kind of activity an activity id built by this module stands for. */
@@ -412,13 +457,14 @@ export function buildArticleActivity(
   ctx: Context<unknown>,
   actorIdentifier: string,
   record: ArticleRecord,
-  objectType: FederatedObjectType
+  objectType: FederatedObjectType,
+  frontendDefault?: string
 ): Activity {
   const fragment = kind === 'create' ? 'create' : `update-${Date.now()}`
   const options = {
     id: activityId(ctx, record.documentId, fragment),
     actor: ctx.getActorUri(actorIdentifier),
-    object: buildArticle(ctx, actorIdentifier, record, objectType),
+    object: buildArticle(ctx, actorIdentifier, record, objectType, frontendDefault),
     published: toInstant(kind === 'create' ? record.firstPublishedAt : new Date().toISOString()),
     to: PUBLIC_COLLECTION,
     ccs: [ctx.getFollowersUri(actorIdentifier)],

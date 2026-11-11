@@ -16,18 +16,17 @@ The plugin reads and writes content types it does not own, so a host provides th
 
 The plugin is named `fediverse`, so its content types are `plugin::fediverse.follower`, `.interaction` and `.federated-article`, and its permission actions `plugin::fediverse.read` and `.manage`. Each row of the three belongs to a site (`site`, a required relation made by `withSiteScope` of `@micelio/strapi-plugin-core`) and each site has its own actor key; see [Sites](docs/architecture/federation.md#sites) and, to upgrade, [docs/operate/configure.md](docs/operate/configure.md#upgrading-to-07-the-federation-state-belongs-to-a-site). A host enables it from `config/plugins.ts`, as `test/app/config/plugins.js` does. The variables are in [.env.example](.env.example):
 
-| Variable                     | Default                                                   | Purpose                                                                                               |
-| ---------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `FEDIVERSE_ENABLED`          | `false`                                                   | Read by the host's `config/plugins.ts`. Off: no routes and no content types.                          |
-| `FEDIVERSE_ACTOR_IDENTIFIER` | required                                                  | Path of the actor URI. Never change it: remote servers key the account and its followers by that URI. |
-| `FEDIVERSE_HANDLE_HOST`      | the host of `URL`                                         | Host of the handle when it is not the CMS host. A bare host; needs `URL`.                             |
-| `URL`                        | `http://localhost:1337`                                   | Strapi's public origin. Activity ids built outside a request come from it.                            |
-| `FRONTEND_URL`               | required in production; `http://localhost:3000` otherwise | Origin of the human-facing article links.                                                             |
-| `FRONTEND_ARTICLE_PATH`      | `/blog/{slug}`                                            | Article path template.                                                                                |
-| `FRONTEND_DEFAULT_LOCALE`    | `en`                                                      | Locale the frontend serves without a prefix.                                                          |
-| `ENCRYPTION_KEY`             | required                                                  | Strapi's own: the actor's private key is stored encrypted with it.                                    |
+| Variable                     | Default                                                   | Purpose                                                                                                              |
+| ---------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `FEDIVERSE_ENABLED`          | `false`                                                   | Read by the host's `config/plugins.ts`. Off: no routes and no content types.                                         |
+| `FEDIVERSE_ACTOR_IDENTIFIER` | required                                                  | Path of the default site's actor URI. Never change it: remote servers key the account and its followers by that URI. |
+| `URL`                        | `http://localhost:1337`                                   | Strapi's public origin. Activity ids built outside a request come from it.                                           |
+| `FRONTEND_URL`               | required in production; `http://localhost:3000` otherwise | Origin of the human-facing article links.                                                                            |
+| `FRONTEND_ARTICLE_PATH`      | `/blog/{slug}`                                            | Article path template.                                                                                               |
+| `FRONTEND_DEFAULT_LOCALE`    | `en`                                                      | Deprecated: the site's Default locale is read first; this only when the site has none.                               |
+| `ENCRYPTION_KEY`             | required                                                  | Strapi's own: the actor's private key is stored encrypted with it.                                                   |
 
-The variables `FEDIVERSE_ACTOR_USERNAME`, `FEDIVERSE_ACTOR_NAME`, `FEDIVERSE_ACTOR_SUMMARY` and `FEDIVERSE_ACTOR_SOURCE_URL` are removed: a boot with one set stops, naming the field of the default site that replaces it (`server/src/utils/removed-variables.ts`).
+The variables `FEDIVERSE_ACTOR_USERNAME`, `FEDIVERSE_ACTOR_NAME`, `FEDIVERSE_ACTOR_SUMMARY` and `FEDIVERSE_ACTOR_SOURCE_URL` are removed: a boot with one set stops, naming the field of the default site that replaces it (`server/src/utils/removed-variables.ts`). `FEDIVERSE_HANDLE_HOST` and the attribution list are dropped in 0.7 for the site's `hosts`: [docs/operate/upgrade-0.7.md](docs/operate/upgrade-0.7.md).
 
 ## Documentation
 

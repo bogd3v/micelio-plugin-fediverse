@@ -34,7 +34,9 @@ import {
 import { configureFedifyLogging, resetFedifyLogging } from './utils/fedify-logging'
 import { assertNoRemovedActorVariables } from './utils/removed-variables'
 import { frontendBaseUrl } from './utils/frontend-url'
-import { handleHost } from './utils/handle-host'
+import cutOver, { runCutOver } from './services/cut-over'
+import { registerActorSection } from './services/site-section'
+import { mountSiteLockProblems, siteLocks } from './services/site-lock'
 
 /** Removes the handler of the core's `siteCreated` hook. */
 let stopSiteCreated: (() => void) | undefined
@@ -47,8 +49,11 @@ const plugin = {
     assertNoRemovedActorVariables()
     assertActorConfigured()
     frontendBaseUrl()
-    // A handle host that is malformed or has no `URL` to keep the ids on stops the boot too.
-    handleHost()
+    // The actor path of each site: the section is registered before Strapi builds the models.
+    registerActorSection(strapi)
+    // The lock of the username and the identifier, and the problem detail it is answered with.
+    strapi.documents.use(siteLocks(strapi))
+    strapi.server.use(mountSiteLockProblems())
 
     // Mounted in register() on purpose: plugin register() runs before
     // server.initMiddlewares() (which mounts `strapi::body`), and the router
@@ -70,6 +75,8 @@ const plugin = {
   },
 
   async bootstrap({ strapi }: { strapi: Core.Strapi }): Promise<void> {
+    // First: it pins the handle host before anything reads it, and a conflict stops the boot.
+    await runCutOver(strapi)
     subscribe(strapi)
     subscribePublisher(strapi)
     subscribeReplies(strapi)
@@ -130,6 +137,7 @@ const plugin = {
     'actor-profile': actorProfile,
     stats: statsService,
     'default-site': defaultSiteService,
+    'cut-over': cutOver,
   },
 }
 

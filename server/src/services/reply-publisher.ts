@@ -3,8 +3,8 @@ import type { Core } from '@strapi/strapi'
 import type { Actor } from '@fedify/fedify/vocab'
 import { Note } from '@fedify/fedify/vocab'
 
-import { ACTOR_IDENTIFIER } from '../constants/actor'
 import { COMMENT_UID } from '../constants/uids'
+import { defaultIdentifier } from './actor-sites'
 import type { ReplyComment, ReplyTarget } from '../types/reply-notes'
 import {
   buildReplyActivity,
@@ -51,7 +51,9 @@ async function authorRecipient(
   target: ReplyTarget
 ): Promise<ExtraRecipient | null> {
   if (!target.deliverToAuthor) return null
-  const documentLoader = await ctx.getDocumentLoader({ identifier: ACTOR_IDENTIFIER })
+  const documentLoader = await ctx.getDocumentLoader({
+    identifier: await defaultIdentifier(strapi),
+  })
   const actor = (await ctx.lookupObject(target.remoteAuthorId, { documentLoader })) as Actor | null
   if (actor?.id == null || actor.inboxId == null) return null
   return { id: actor.id, inboxId: actor.inboxId, endpoints: actor.endpoints }
@@ -120,7 +122,7 @@ async function sendForState(
       buildReplyActivity(
         kind,
         ctx,
-        ACTOR_IDENTIFIER,
+        await defaultIdentifier(strapi),
         { ...comment, fediverseNoteUri: noteUri },
         target
       ),

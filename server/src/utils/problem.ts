@@ -31,6 +31,9 @@ const TITLES: Record<FederationProblemCode, string> = {
   'follower-not-found': 'Follower not found',
   'not-failed': 'Nothing to retry',
   'unknown-site': 'Unknown site',
+  'username-locked': 'Username locked',
+  'identifier-locked': 'Actor identifier locked',
+  'identifier-taken': 'Actor identifier taken',
 }
 
 /** The part of a Koa context that answering a problem detail needs. */

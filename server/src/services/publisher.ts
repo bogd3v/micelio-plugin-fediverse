@@ -6,16 +6,17 @@ import type { Context } from '@fedify/fedify'
 import { PUBLIC_COLLECTION, type Activity } from '@fedify/fedify/vocab'
 
 import { ActorUpdate } from '../attributed-actor'
-import { ACTOR_IDENTIFIER } from '../constants/actor'
 import { ARTICLE_UID, GLOBAL_UID, SITE_UID } from '../constants/uids'
 import { buildActor, getFederation } from '../federation'
 import {
   buildArticleActivity,
   buildDeleteActivity,
   findPublishedArticle,
+  frontendDefaultLocale,
   getDefaultLocale,
 } from './articles'
 import { getObjectType } from './object-type'
+import { actorSiteOf, defaultIdentifier, listActorSites } from './actor-sites'
 import {
   activityTypeFor,
   findFederatedArticle,
@@ -83,7 +84,8 @@ export async function sendToFollowers(
   strapi: Core.Strapi,
   activity: Activity,
   extra: ExtraRecipient[] = [],
-  site?: string
+  site?: string,
+  identifier?: string
 ): Promise<FanOut> {
   const followers = await listFollowers(strapi, { site })
   const reachable = followers.filter((follower) => follower.unreachableSince == null)
@@ -92,7 +94,7 @@ export async function sendToFollowers(
 
   const ctx = createContext(strapi)
   await ctx.sendActivity(
-    { identifier: ACTOR_IDENTIFIER },
+    { identifier: identifier ?? (await defaultIdentifier(strapi)) },
     [
       ...extra,
       ...reachable.map((follower) => ({
@@ -173,9 +175,10 @@ export async function federateArticle(
     buildArticleActivity(
       type === 'Create' ? 'create' : 'update',
       ctx,
-      ACTOR_IDENTIFIER,
+      await defaultIdentifier(strapi),
       record,
-      objectType
+      objectType,
+      await frontendDefaultLocale(strapi)
     ),
     record.firstPublishedAt,
     site
@@ -221,7 +224,7 @@ export async function retryFailedDelivery(
       strapi,
       documentId,
       'Delete',
-      buildDeleteActivity(ctx, ACTOR_IDENTIFIER, documentId),
+      buildDeleteActivity(ctx, await defaultIdentifier(strapi), documentId),
       undefined,
       site
     )
@@ -265,7 +268,7 @@ async function onSiteSettingsChanged(strapi: Core.Strapi, event: EntryEvent): Pr
   if (!(await isDefaultLocale(strapi, event))) {
     await new Promise((resolve) => setTimeout(resolve, LOCALE_SYNC_DELAY_MS))
   }
-  await onProfileChanged(strapi)
+  await onProfileChanged(strapi, event.entry?.documentId)
 }
 
 /** Sends a `Delete` for an article that was federated and has no published version left. */
@@ -284,7 +287,7 @@ async function retractArticle(
     strapi,
     documentId,
     'Delete',
-    buildDeleteActivity(ctx, ACTOR_IDENTIFIER, documentId),
+    buildDeleteActivity(ctx, await defaultIdentifier(strapi), documentId),
     undefined,
     site
   )
@@ -334,6 +337,11 @@ function hasEditorial(strapi: Core.Strapi, uid: string): boolean {
 
 const PROFILE_FINGERPRINT_KEY = 'profileFingerprint'
 
+/** The store key of the fingerprint of the actor last sent for a site. */
+function fingerprintKey(site: string): string {
+  return `${PROFILE_FINGERPRINT_KEY}:${site}`
+}
+
 /**
  * Mastodon caches remote profiles, so a change to the `global` single type or to the site
  * settings (name, bio, avatar, header, username) only reaches followers' servers through an
@@ -341,16 +349,47 @@ const PROFILE_FINGERPRINT_KEY = 'profileFingerprint'
  *
  * @remarks
  * Sent only when the served actor differs from the one last sent (a fingerprint in the plugin
- * store), so saving unrelated settings, or the same profile in another locale, sends nothing.
+ * store, one per site), so saving unrelated settings, or the same profile in another locale,
+ * sends nothing. The `hosts` of the site are part of the actor (`attributionDomains`), so a change
+ * of them sends it too.
+ *
+ * @param site - The site's `documentId`; the default site when omitted.
  */
-async function onProfileChanged(strapi: Core.Strapi): Promise<void> {
+async function onProfileChanged(strapi: Core.Strapi, site?: string): Promise<void> {
+  // One at a time per site, each reading the actor when its turn comes: the events of a burst of
+  // saves (each emits one) then send the latest actor once, not one `Update(Person)` per save, and
+  // an older actor cannot overwrite the fingerprint of a newer one.
+  const key = site ?? ''
+  const previous = profileTurns.get(key)
+  let release = (): void => undefined
+  const mine = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  profileTurns.set(key, mine)
+  await previous
+  try {
+    await sendProfileUpdate(strapi, site)
+  } finally {
+    release()
+    if (profileTurns.get(key) === mine) profileTurns.delete(key)
+  }
+}
+
+/** The `onProfileChanged` calls waiting their turn, by site (`''` for the default site). */
+const profileTurns = new Map<string, Promise<void>>()
+
+async function sendProfileUpdate(strapi: Core.Strapi, site?: string): Promise<void> {
+  const actorSite = site
+    ? await actorSiteOf(strapi, site)
+    : (await listActorSites(strapi)).find((candidate) => candidate.isDefault)
+  if (actorSite?.identifier == null) return
   const ctx = createContext(strapi)
-  const actor = await buildActor(ctx, ACTOR_IDENTIFIER)
+  const actor = await buildActor(ctx, actorSite.identifier)
   const fingerprint = createHash('sha256')
     .update(JSON.stringify(await actor.toJsonLd()))
     .digest('hex')
   const store = strapi.store({ type: 'plugin', name: 'fediverse' })
-  if ((await store.get({ key: PROFILE_FINGERPRINT_KEY })) === fingerprint) return
+  if ((await store.get({ key: fingerprintKey(actorSite.documentId) })) === fingerprint) return
 
   const fanOut = await sendToFollowers(
     strapi,
@@ -360,23 +399,32 @@ async function onProfileChanged(strapi: Core.Strapi): Promise<void> {
       actor: actor.id,
       object: actor,
       to: PUBLIC_COLLECTION,
-      cc: ctx.getFollowersUri(ACTOR_IDENTIFIER),
-    })
+      cc: ctx.getFollowersUri(actorSite.identifier),
+    }),
+    [],
+    actorSite.documentId,
+    actorSite.identifier
   )
-  await store.set({ key: PROFILE_FINGERPRINT_KEY, value: fingerprint })
+  await store.set({ key: fingerprintKey(actorSite.documentId), value: fingerprint })
   strapi.log.info(`[fediverse] Update(Person) for the profile: ${describeFanOut(fanOut)}`)
 }
 
+/** The `global` single type gives every actor its avatar and name fallbacks: each one is checked. */
+async function onGlobalChanged(strapi: Core.Strapi): Promise<void> {
+  for (const site of await listActorSites(strapi)) {
+    if (site.identifier != null) await onProfileChanged(strapi, site.documentId)
+  }
+}
+
 /**
- * Sends `Update(Person)` at boot when the served actor differs from the one last sent. Part of the
- * actor comes from variables (the `url`, the Blog field and `attributionDomains` from `FRONTEND_URL`
- * and `FEDIVERSE_HANDLE_HOST`), which change only on a restart; a release that adds a property to
- * the actor reaches followers' servers this way too. Failures are logged, never thrown: the boot
- * goes on.
+ * Sends `Update(Person)` at boot, for each site that has an actor, when the served actor differs
+ * from the one last sent. Part of the actor comes from variables (the `url` and the Blog field from
+ * `FRONTEND_URL`), which change only on a restart; a release that adds a property to the actor
+ * reaches followers' servers this way too. Failures are logged, never thrown: the boot goes on.
  */
 export async function syncProfileAtBoot(strapi: Core.Strapi): Promise<void> {
   try {
-    await onProfileChanged(strapi)
+    await onGlobalChanged(strapi)
   } catch (error) {
     strapi.log.error('[fediverse] profile update federation at boot failed', { error })
   }
@@ -478,11 +526,11 @@ export function subscribe(strapi: Core.Strapi): void {
     // `global` has no draft & publish: saving it in the admin emits entry.update.
     strapi.eventHub.on(
       'entry.create',
-      guarded(GLOBAL_UID, 'profile update federation', onProfileChanged)
+      guarded(GLOBAL_UID, 'profile update federation', onGlobalChanged)
     ),
     strapi.eventHub.on(
       'entry.update',
-      guarded(GLOBAL_UID, 'profile update federation', onProfileChanged)
+      guarded(GLOBAL_UID, 'profile update federation', onGlobalChanged)
     ),
     // The actor's profile lives in the default site's `fediverse` component. Not filtered by locale:
     // it is not localized, so a save in `es` changes the actor but only emits the `es` event
