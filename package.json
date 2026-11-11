@@ -1,8 +1,7 @@
 {
   "name": "@micelio/strapi-plugin-fediverse",
-  "version": "0.1.0",
+  "version": "0.7.0",
   "description": "Micelio's fediverse federation (ActivityPub) as a Strapi 5 plugin.",
-  "private": true,
   "type": "commonjs",
   "license": "AGPL-3.0-only",
   "repository": {

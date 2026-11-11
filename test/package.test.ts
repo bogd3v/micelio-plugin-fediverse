@@ -60,6 +60,24 @@ describe('the packed package', () => {
     expect(packageJson.strapi).toMatchObject({ kind: 'plugin', name: 'fediverse' })
   })
 
+  it('the packed package declares micelio 0.7 and ships dist/strapi-server.js and dist/strapi-admin', () => {
+    const files = packed.files.map((file) => file.path)
+    expect(packageJson.micelio).toBe('0.7')
+    expect(packageJson.version).toMatch(/^0\.7\.\d+$/)
+    expect('private' in packageJson).toBe(false)
+    const packedManifest = JSON.parse(
+      fs.readFileSync(path.join(INSTALLED, 'package.json'), 'utf8')
+    ) as { micelio?: string }
+    expect(packedManifest.micelio).toBe('0.7')
+    expect(files).toEqual(
+      expect.arrayContaining([
+        'dist/strapi-server.js',
+        'dist/strapi-admin.mjs',
+        'dist/strapi-admin.js',
+      ])
+    )
+  })
+
   it('builds the plugin before npm packs it, because the publish job runs no build', () => {
     expect(packageJson.scripts.prepack).toBe('npm run build')
   })
