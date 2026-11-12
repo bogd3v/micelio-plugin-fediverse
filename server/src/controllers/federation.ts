@@ -88,7 +88,7 @@ export default ({
           409,
           blocker,
           blocker === 'locale-not-federated'
-            ? 'Only the default locale is federated.'
+            ? 'Federate now works from the default language: translations go with it.'
             : 'Only a published version with a title and slug can be federated.'
         )
         return
