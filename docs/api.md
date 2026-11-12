@@ -24,17 +24,17 @@ The three routes belong to a site like every content API route of a Micelio plug
 
 Served by Fedify, outside Strapi's authentication and permissions, for remote servers rather than for a frontend. The actor path is the identifier of a site's actor: `FEDIVERSE_ACTOR_IDENTIFIER` for the default site, the `slug` for a site created later (the examples say `blog`).
 
-| Path                                     | What it answers                                                                         |
-| ---------------------------------------- | --------------------------------------------------------------------------------------- |
-| `/.well-known/webfinger`                 | WebFinger of the handle (`acct:<username>@<host>`, a host of a site; it finds the site) |
-| `/.well-known/nodeinfo`, `/nodeinfo/2.1` | NodeInfo with the software name and the count of published articles                     |
-| `/fediverse/user/blog`                   | The actor (`Person`)                                                                    |
-| `/fediverse/user/blog/inbox`             | The actor's inbox (`POST`, signed)                                                      |
-| `/fediverse/inbox`                       | The shared inbox (`POST`, signed)                                                       |
-| `/fediverse/user/blog/followers`         | The followers collection                                                                |
-| `/fediverse/user/blog/outbox`            | The outbox: public `Create(Article)` activities, paginated by `cursor`                  |
-| `/fediverse/articles/:documentId`        | An article as an `Article` or a `Note` (`404` unless published in the default locale)   |
-| `/fediverse/notes/:documentId`           | A moderator's reply as a `Note` (`404` unless it is shown)                              |
+| Path                                     | What it answers                                                                                                                                              |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/.well-known/webfinger`                 | WebFinger of the handle (`acct:<username>@<host>`, a host of a site; it finds the site)                                                                      |
+| `/.well-known/nodeinfo`, `/nodeinfo/2.1` | NodeInfo with the software name and the count of published articles                                                                                          |
+| `/fediverse/user/blog`                   | The actor (`Person`)                                                                                                                                         |
+| `/fediverse/user/blog/inbox`             | The actor's inbox (`POST`, signed)                                                                                                                           |
+| `/fediverse/inbox`                       | The shared inbox (`POST`, signed)                                                                                                                            |
+| `/fediverse/user/blog/followers`         | The followers collection                                                                                                                                     |
+| `/fediverse/user/blog/outbox`            | The outbox: public `Create(Article)` activities, paginated by `cursor`, each object with the same `contentMap` as its own route                              |
+| `/fediverse/articles/:documentId`        | An article as an `Article` or a `Note` (`404` unless published in the default locale; `contentMap` and `nameMap` list every published locale, default first) |
+| `/fediverse/notes/:documentId`           | A moderator's reply as a `Note` (`404` unless it is shown)                                                                                                   |
 
 The ids in this table are contracts that never change ([architecture/federation.md](architecture/federation.md#contracts-that-never-change)). An inbox `POST` that fails authentication is answered `401`; one refused for its `Digest` or `Signature-Input` is `401` as well, with a plain-text reason ([architecture/federation.md](architecture/federation.md#inbox-digest-algorithms)).
 

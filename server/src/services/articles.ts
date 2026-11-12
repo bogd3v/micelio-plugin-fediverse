@@ -7,6 +7,7 @@ import {
   Create,
   Delete,
   Image,
+  LanguageString,
   Note,
   PUBLIC_COLLECTION,
   Tombstone,
@@ -17,7 +18,12 @@ import {
 import { CREDIT_KINDS, LICENSES } from '../constants/licenses'
 import { ARTICLE_PATH } from '../constants/paths'
 import { ARTICLE_UID, SITE_UID } from '../constants/uids'
-import type { ArticleRecord, FederatedObjectType, MediaRecord } from '../types/articles'
+import type {
+  ArticleLocale,
+  ArticleRecord,
+  FederatedObjectType,
+  MediaRecord,
+} from '../types/articles'
 import type { FederatedActivityType } from '../types/federated-articles'
 import { findFirstPublished } from './federated-articles'
 import { resolveSite } from './sites'
@@ -178,7 +184,7 @@ export async function resolveArticleId(
   return parseArticleUri(uri) ?? (await findArticleDocumentIdByUrl(strapi, uri))
 }
 
-/** Only the default locale is federated in the MVP. */
+/** The locale an article must have published to be federated: its anchor. */
 export async function getDefaultLocale(strapi: Core.Strapi): Promise<string> {
   const locale = await strapi.plugin('i18n').service('locales').getDefaultLocale()
   return locale as string
@@ -235,10 +241,27 @@ export function formatCreditHtml(
   return `${kind}: ${parts.join(' · ')}`
 }
 
-function toRecord(row: ArticleRow): ArticleRecord | null {
+function toLocale(row: ArticleRow): ArticleLocale | null {
   // Federating an article without a slug would produce a broken frontend URL.
-  if (!row.slug || !row.title || !row.publishedAt) return null
+  if (!row.slug || !row.title || !row.locale) return null
   return {
+    locale: row.locale,
+    title: row.title,
+    description: row.description ?? '',
+    slug: row.slug,
+    // The credit is shown only with the cover it belongs to, as in the default locale's `content`.
+    creditHtml:
+      toImage(row.cover, formatCreditHtml(row.coverCredit, row.locale))?.creditHtml ?? null,
+    publishedAt: row.publishedAt ?? null,
+    updatedAt: row.updatedAt ?? null,
+  }
+}
+
+function toRecord(row: ArticleRow): ArticleRecord | null {
+  if (!row.slug || !row.title || !row.publishedAt) return null
+  const own = toLocale(row)
+  return {
+    locales: own ? [own] : [],
     documentId: row.documentId,
     title: row.title,
     description: row.description ?? '',
@@ -254,7 +277,10 @@ function toRecord(row: ArticleRow): ArticleRecord | null {
   }
 }
 
-/** The published, default-locale version of an article, or null. */
+/**
+ * The published, default-locale version of an article, with every other published locale in
+ * `locales` (default first), or null while the default locale is not published.
+ */
 export async function findPublishedArticle(
   strapi: Core.Strapi,
   documentId: string
@@ -266,8 +292,47 @@ export async function findPublishedArticle(
     locale,
     populate: ARTICLE_POPULATE,
   })) as ArticleRow | null
-  const record = row ? toRecord(row) : null
-  return record ? (await withFirstPublished(strapi, [record]))[0] : null
+  const record = row ? toRecord({ ...row, locale: row.locale ?? locale }) : null
+  if (record == null) return null
+  return (await withFirstPublished(strapi, await withLocales(strapi, [record])))[0]
+}
+
+/**
+ * Fills `locales` of each record with every published locale of its document, the record's own
+ * (default) locale first and the others by code, and moves `updatedAt` to the latest change of any
+ * of them: publishing or saving a translation is a change of the object, though the default
+ * locale's row did not move.
+ */
+async function withLocales(
+  strapi: Core.Strapi,
+  records: ArticleRecord[]
+): Promise<ArticleRecord[]> {
+  if (records.length === 0) return records
+  const rows = (await strapi.documents(ARTICLE_UID).findMany({
+    status: 'published',
+    locale: '*',
+    filters: { documentId: { $in: records.map((record) => record.documentId) } },
+    populate: { cover: true, coverCredit: true },
+    limit: -1,
+  })) as ArticleRow[]
+  return records.map((record) => {
+    const others = rows
+      .filter((row) => row.documentId === record.documentId && row.locale !== record.locale)
+      .sort((a, b) => (a.locale ?? '').localeCompare(b.locale ?? ''))
+      .map(toLocale)
+      .filter((entry): entry is ArticleLocale => entry != null)
+    const locales = [...record.locales, ...others]
+    const times = locales
+      .flatMap((entry) => [entry.publishedAt, entry.updatedAt])
+      .concat(record.updatedAt)
+      .filter((value): value is string => value != null)
+      .map((value) => new Date(value).getTime())
+    return {
+      ...record,
+      locales,
+      updatedAt: times.length ? new Date(Math.max(...times)).toISOString() : record.updatedAt,
+    }
+  })
 }
 
 /** Sets `firstPublishedAt` from what was federated, so the object keeps one `published` for life. */
@@ -305,7 +370,12 @@ export async function listPublishedArticles(
   ])
   const items = await withFirstPublished(
     strapi,
-    rows.map(toRecord).filter((record): record is ArticleRecord => record != null)
+    await withLocales(
+      strapi,
+      rows
+        .map((row) => toRecord({ ...row, locale: row.locale ?? locale }))
+        .filter((record): record is ArticleRecord => record != null)
+    )
   )
   return { items, total }
 }
@@ -330,6 +400,20 @@ function updatedOf(record: ArticleRecord): Temporal.Instant | undefined {
     : undefined
 }
 
+/** The HTML body of one locale: the title (when the shape has none of its own), the excerpt, the link and the credit. */
+function bodyOf(
+  entry: { title: string; description: string; creditHtml?: string | null },
+  url: URL,
+  includeTitle: boolean
+): string {
+  return [
+    includeTitle ? `<p><strong>${escapeHtml(entry.title)}</strong></p>` : '',
+    entry.description ? `<p>${escapeHtml(entry.description)}</p>` : '',
+    `<p><a href="${escapeHtml(url.href)}">${escapeHtml(url.href)}</a></p>`,
+    entry.creditHtml ? `<p><small>${entry.creditHtml}</small></p>` : '',
+  ].join('')
+}
+
 /** What both shapes share: the id, the addressing, the dates, the preview image and the body. */
 function objectOptions(
   ctx: Context<unknown>,
@@ -339,12 +423,27 @@ function objectOptions(
   frontendDefault?: string
 ) {
   const url = getFrontendArticleUrl(record.slug, record.locale, frontendDefault)
-  const content = [
-    includeTitle ? `<p><strong>${escapeHtml(record.title)}</strong></p>` : '',
-    record.description ? `<p>${escapeHtml(record.description)}</p>` : '',
-    `<p><a href="${escapeHtml(url.href)}">${escapeHtml(url.href)}</a></p>`,
-    record.image?.creditHtml ? `<p><small>${record.image.creditHtml}</small></p>` : '',
-  ].join('')
+  const content = bodyOf(
+    {
+      title: record.title,
+      description: record.description,
+      creditHtml: record.image?.creditHtml ?? null,
+    },
+    url,
+    includeTitle
+  )
+  // The default locale is `content`; `contentMap` adds every published locale, itself first.
+  const contentMap = record.locales.map(
+    (entry) =>
+      new LanguageString(
+        bodyOf(
+          entry,
+          getFrontendArticleUrl(entry.slug, entry.locale, frontendDefault),
+          includeTitle
+        ),
+        entry.locale
+      )
+  )
 
   const cover = record.image
     ? new Image({
@@ -359,7 +458,7 @@ function objectOptions(
     // type never orphans an object already sent.
     id: ctx.getObjectUri(Article, { documentId: record.documentId }),
     attribution: ctx.getActorUri(actorIdentifier),
-    content,
+    contents: [content, ...contentMap],
     url,
     published: toInstant(record.firstPublishedAt),
     updated: updatedOf(record),
@@ -372,12 +471,21 @@ function objectOptions(
 }
 
 /**
- * The `Article` shape: `name` carries the title, so the body has the excerpt and the link only
+ * The `Article` shape: `name` and `nameMap` carry the title, so the body has the excerpt and the link only
  * (GoToSocial shows `name` as a content warning and would repeat the title in the body). `summary`
  * is deliberately unused: Mastodon shows it as a content warning.
  */
-function buildArticleShape(options: ReturnType<typeof objectOptions>, title: string): Article {
-  return new Article({ ...options, name: title })
+function buildArticleShape(
+  options: ReturnType<typeof objectOptions>,
+  record: ArticleRecord
+): Article {
+  return new Article({
+    ...options,
+    names: [
+      record.title,
+      ...record.locales.map((entry) => new LanguageString(entry.title, entry.locale)),
+    ],
+  })
 }
 
 /**
@@ -402,10 +510,7 @@ export function buildArticle(
 ): Article | Note {
   return objectType === 'note'
     ? buildNoteShape(objectOptions(ctx, actorIdentifier, record, true, frontendDefault))
-    : buildArticleShape(
-        objectOptions(ctx, actorIdentifier, record, false, frontendDefault),
-        record.title
-      )
+    : buildArticleShape(objectOptions(ctx, actorIdentifier, record, false, frontendDefault), record)
 }
 
 /** The article and the kind of activity an activity id built by this module stands for. */

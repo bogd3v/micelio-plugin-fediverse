@@ -31,7 +31,7 @@ import type { FediverseContextData } from '../types/federation'
 
 interface EntryEvent {
   uid?: string
-  entry?: { documentId?: string; locale?: string | null } | null
+  entry?: { documentId?: string; locale?: string | null; publishedAt?: string | null } | null
 }
 
 /** What the core's `afterPublish` and `afterUnpublish` hooks hand a handler (`docs/hooks.md` of the core). */
@@ -140,7 +140,11 @@ export function describeFanOut({ queued, skipped }: FanOut): string {
 }
 
 async function isDefaultLocale(strapi: Core.Strapi, event: EntryEvent): Promise<boolean> {
-  const locale = event.entry?.locale
+  return isDefault(strapi, event.entry?.locale)
+}
+
+/** Whether the locale of an event is the default one (a missing locale counts as the default). */
+async function isDefault(strapi: Core.Strapi, locale: string | null | undefined): Promise<boolean> {
   return locale == null || locale === (await getDefaultLocale(strapi))
 }
 
@@ -150,22 +154,44 @@ export type FederateOutcome =
   | { status: 'not-federable' }
 
 /**
- * Queues the article's current published version for the followers: a `Create` when it was never
+ * Queues the article's current published version, with every published locale in its
+ * `contentMap`, for the followers: a `Create` when it was never
  * sent, was retracted or its `Create` failed, an `Update` otherwise (`activityTypeFor`), because
  * publishing again is how edits go live in Strapi 5. Used by the publish event and by the admin panel's "Federate now".
  *
  * @param site - The `documentId` of the site whose followers get it; the default site when omitted.
- * @returns `not-federable` when the default locale has no published version with a title and slug.
+ * @param changedAt - An ISO time that the object's `updated` is not earlier than: when the change
+ * is one the published rows do not show, such as a translation unpublished.
+ * @returns `not-federable` when the default locale has no published version with a title and slug
+ * (the anchor: a translation alone is never federated).
  */
 export async function federateArticle(
   strapi: Core.Strapi,
   documentId: string,
-  site?: string
+  site?: string,
+  changedAt?: string
 ): Promise<FederateOutcome> {
-  const record = await findPublishedArticle(strapi, documentId)
-  if (record == null) return { status: 'not-federable' }
+  const found = await findPublishedArticle(strapi, documentId)
+  if (found == null) return { status: 'not-federable' }
+  const row = await findFederatedArticle(strapi, documentId, site)
+  const type = activityTypeFor(row)
+  // `updated` never goes back: a change no published row records (a translation left the map)
+  // moved it to the time of its `Update`, and "Federate now" or a retry later sends the same map
+  // from rows that are older than that. A receiving server drops an edit that is not newer than
+  // the one it holds.
+  const lastUpdateAt =
+    row?.lastActivityAt != null && row.status !== 'deleted' && row.lastActivityType === 'Update'
+      ? new Date(row.lastActivityAt).toISOString()
+      : undefined
+  const floor = [changedAt, lastUpdateAt]
+    .filter((value): value is string => value != null)
+    .sort()
+    .pop()
+  const record =
+    floor != null && (found.updatedAt == null || floor > found.updatedAt)
+      ? { ...found, updatedAt: floor }
+      : found
 
-  const type = activityTypeFor(await findFederatedArticle(strapi, documentId, site))
   const ctx = createContext(strapi)
   const objectType = await getObjectType(strapi)
   const fanOut = await sendRecorded(
@@ -240,14 +266,21 @@ export async function retryFailedDelivery(
     : { status: 'not-federable' }
 }
 
-/** Federates the published version of an article and warns when there is nothing to federate. */
+/**
+ * Federates the published version of an article and warns when there is nothing to federate.
+ *
+ * @param locale - The locale that was published. A translation published before the default
+ * locale sends nothing and is no warning: it is in the map of the `Create` the default
+ * locale's publish sends.
+ */
 async function publishArticle(
   strapi: Core.Strapi,
   documentId: string,
-  site?: string
+  site?: string,
+  locale?: string | null
 ): Promise<void> {
   const outcome = await federateArticle(strapi, documentId, site)
-  if (outcome.status === 'not-federable') {
+  if (outcome.status === 'not-federable' && (await isDefault(strapi, locale))) {
     strapi.log.warn(
       `[fediverse] not federating article ${documentId}: no published default-locale version with a title and slug`
     )
@@ -256,8 +289,8 @@ async function publishArticle(
 
 async function onPublish(strapi: Core.Strapi, event: EntryEvent): Promise<void> {
   const documentId = event.entry?.documentId
-  if (!documentId || !(await isDefaultLocale(strapi, event))) return
-  await publishArticle(strapi, documentId)
+  if (!documentId) return
+  await publishArticle(strapi, documentId, undefined, event.entry?.locale)
 }
 
 /**
@@ -294,15 +327,44 @@ async function retractArticle(
   strapi.log.info(`[fediverse] Delete(Article) for ${documentId}: ${describeFanOut(fanOut)}`)
 }
 
-/** The retractions in progress, by `documentId`: see `onRemoved`. */
+/**
+ * Sends the `Update` that takes an unpublished translation out of the map, for an article that was
+ * sent and whose default locale is still published; nothing otherwise (a retracted article has no
+ * map to correct).
+ */
+async function refreshArticle(
+  strapi: Core.Strapi,
+  documentId: string,
+  site?: string
+): Promise<void> {
+  if (!(await isFederated(strapi, documentId, site))) return
+  await federateArticle(strapi, documentId, site, new Date().toISOString())
+}
+
+/** The retractions and refreshes in progress, by `documentId` and locale: see `onRemoved`. */
 const removing = new Map<string, Promise<void>>()
 
-async function onRemoved(strapi: Core.Strapi, event: EntryEvent): Promise<void> {
+/**
+ * The retraction (or, for a translation, the refresh) that follows an unpublish or a delete.
+ *
+ * @param fromDelete - The event is `entry.delete`, which Strapi emits for the draft and for the
+ * published version of an entry: a translation is refreshed on the published one only, because
+ * deleting a translation that was never published leaves the map as it was.
+ */
+async function onRemoved(
+  strapi: Core.Strapi,
+  event: EntryEvent,
+  fromDelete = false
+): Promise<void> {
   const documentId = event.entry?.documentId
-  if (!documentId || !(await isDefaultLocale(strapi, event))) return
+  if (!documentId) return
+  const isDefaultEvent = await isDefaultLocale(strapi, event)
+  if (!isDefaultEvent && fromDelete && event.entry?.publishedAt == null) return
   // Strapi emits `entry.delete` once per stored version of the document (the draft and the
-  // published one), at once: the second waits for the first, whose row then says `deleted`.
-  const running = removing.get(documentId)
+  // published one), at once: the second waits for the first, whose row then says `deleted`
+  // (or, for a translation, whose `Update` already leaves it out of the map).
+  const key = `${documentId}:${event.entry?.locale ?? ''}`
+  const running = removing.get(key)
   if (running != null) {
     await running
     return
@@ -311,14 +373,17 @@ async function onRemoved(strapi: Core.Strapi, event: EntryEvent): Promise<void> 
     // The event names no site, and an article of a site-scoped type was sent for its own:
     // retract it from every site that has a row for it (the default site's, for an unscoped type).
     for (const site of await findFederatedSites(strapi, documentId)) {
-      await retractArticle(strapi, documentId, site)
+      // The default locale anchors the object (its `url` is that locale's address): without it
+      // the article is retracted, whatever translations stay. A translation only leaves the map.
+      if (isDefaultEvent) await retractArticle(strapi, documentId, site)
+      else await refreshArticle(strapi, documentId, site)
     }
   })()
-  removing.set(documentId, retraction)
+  removing.set(key, retraction)
   try {
     await retraction
   } finally {
-    removing.delete(documentId)
+    removing.delete(key)
   }
 }
 
@@ -452,7 +517,6 @@ export function subscribeHooks(strapi: Core.Strapi): void {
       // the one-trigger-per-type rule does not rest on that alone (see `subscribe`).
       if (payload?.type !== ARTICLE_UID || !hasEditorial(strapi, payload.type)) return
       try {
-        if (!(await isDefaultLocale(strapi, { entry: { locale: payload.locale } }))) return
         await handler(strapi, payload)
       } catch (error) {
         strapi.log.error(`[fediverse] ${label} failed`, { error })
@@ -462,14 +526,16 @@ export function subscribeHooks(strapi: Core.Strapi): void {
   hookUnsubscribers = [
     hooks.on(
       'afterPublish',
-      guarded('afterPublish federation', (s, { documentId, site }) =>
-        publishArticle(s, documentId, site ?? undefined)
+      guarded('afterPublish federation', (s, { documentId, site, locale }) =>
+        publishArticle(s, documentId, site ?? undefined, locale)
       )
     ),
     hooks.on(
       'afterUnpublish',
-      guarded('afterUnpublish federation', (s, { documentId, site }) =>
-        retractArticle(s, documentId, site ?? undefined)
+      guarded('afterUnpublish federation', async (s, { documentId, site, locale }) =>
+        (await isDefault(s, locale))
+          ? retractArticle(s, documentId, site ?? undefined)
+          : refreshArticle(s, documentId, site ?? undefined)
       )
     ),
   ]
@@ -521,7 +587,7 @@ export function subscribe(strapi: Core.Strapi): void {
     ),
     strapi.eventHub.on(
       'entry.delete',
-      guarded(ARTICLE_UID, 'article delete federation', onRemoved)
+      guarded(ARTICLE_UID, 'article delete federation', (s, event) => onRemoved(s, event, true))
     ),
     // `global` has no draft & publish: saving it in the admin emits entry.update.
     strapi.eventHub.on(

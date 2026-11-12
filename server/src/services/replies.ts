@@ -175,7 +175,7 @@ export async function findReplyParent(
 /**
  * Writes a remote reply as a `PENDING` comment under `parent`, with its content
  * sanitized. The caller has checked the author, the dedupe and the article.
- * Only the default locale is federated, so the reply belongs to that version
+ * The default locale anchors the federated object, so the reply belongs to that version
  * of the article and is stored in its locale, where the frontend asks for it.
  */
 export async function storeReply(
