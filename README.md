@@ -17,10 +17,10 @@ The plugin reads and writes content types it does not own, so a host provides th
 1. Install the package at an exact version, with the plugins it builds on (see above) already in the host:
 
    ```bash
-   npm install --save-exact @micelio/strapi-plugin-fediverse@0.7.0
+   npm install --save-exact @micelio/strapi-plugin-fediverse@0.7.1
    ```
 
-   The peer range of `@micelio/strapi-plugin-core` is `^0.2.0`, the core the suites run on.
+   The peer range of `@micelio/strapi-plugin-core` is `^0.2.0 || ^0.4.0`; the suites run on `0.4.0` and, by hand, on `0.2.0`.
 
 2. List it in `config/plugins.ts` as always enabled. The plugin reads `FEDIVERSE_ENABLED` itself, so its admin code is bundled whatever the variable is when the admin is built:
 

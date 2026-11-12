@@ -109,7 +109,7 @@ Since 0.7 the hosts of the site, not variables, decide both (`FEDIVERSE_HANDLE_H
 
 ## Upgrading to 0.7: the federation state belongs to a site
 
-**This is a breaking change of stored data.** The followers, interactions and federated-article rows, and the actor key, belong to a site now (ADR-0017, section 4), and the plugin needs `@micelio/strapi-plugin-core` 0.2 or later, which owns the sites. Nothing is lost and nothing changes for remote servers: the actor id, the key id and the messages in the delivery queue are the same, and `fedify_kv_v2` and `fedify_message_v2` are not touched.
+**This is a breaking change of stored data.** The followers, interactions and federated-article rows, and the actor key, belong to a site now (ADR-0017, section 4), and the plugin needs `@micelio/strapi-plugin-core` 0.2 or 0.4 (the peer range of 0.7.1 is `^0.2.0 || ^0.4.0`), which owns the sites. Nothing is lost and nothing changes for remote servers: the actor id, the key id and the messages in the delivery queue are the same, and `fedify_kv_v2` and `fedify_message_v2` are not touched.
 
 1. Take a database backup (the host's procedure).
 2. Install the new version and restart. On the first boot, once the core has created the default site (it has since its 0.6), the plugin gives it every follower, interaction and federated-article row that has no site, and copies the stored actor key to the default site's entry. It logs counts only, for example `[fediverse] gave the default site 120 follower(s), 340 interaction(s), 85 federated article(s) and 1 actor key(s)`. A second boot logs nothing and changes nothing. On a database that has no site yet, the same happens as soon as the core creates the default site.
