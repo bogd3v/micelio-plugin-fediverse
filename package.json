@@ -1,6 +1,6 @@
 {
   "name": "@micelio/strapi-plugin-fediverse",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Micelio's fediverse federation (ActivityPub) as a Strapi 5 plugin.",
   "type": "commonjs",
   "license": "AGPL-3.0-only",
@@ -63,14 +63,14 @@
     "structured-field-values": "2.0.4"
   },
   "peerDependencies": {
-    "@micelio/strapi-plugin-core": "^0.2.0",
+    "@micelio/strapi-plugin-core": "^0.2.0 || ^0.4.0",
     "@strapi/strapi": "^5.59.0",
     "strapi-plugin-comments": "^3.2.4"
   },
   "devDependencies": {
     "@micelio/eslint-config": "^0.2.8",
     "@micelio/prettier-config": "^0.1.0",
-    "@micelio/strapi-plugin-core": "0.2.0",
+    "@micelio/strapi-plugin-core": "0.4.0",
     "@micelio/tsconfig": "^0.1.0",
     "@strapi/design-system": "^2.2.4",
     "@strapi/icons": "^2.2.4",

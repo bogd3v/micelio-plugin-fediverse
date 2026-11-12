@@ -1,11 +1,11 @@
-# Release notes and upgrade notes: 0.7.0
+# Release notes and upgrade notes: 0.7.0 and 0.7.1
 
-**Kind:** how-to. The release notes of `@micelio/strapi-plugin-fediverse` `0.7.0` (a breaking change before 1.0.0: standard, section 7), from the plan in `docs/architecture/fediverse-cut-over.md` of `bogd3v/micelio-cms`. The Release workflow takes the Compatibility bullets and the upgrade notes below as its `compatibility` and `upgrade_notes` inputs.
+**Kind:** how-to. The release notes of `@micelio/strapi-plugin-fediverse` `0.7.0` (a breaking change before 1.0.0: standard, section 7), from the plan in `docs/architecture/fediverse-cut-over.md` of `bogd3v/micelio-cms`, and of the patch `0.7.1` (last section). The Release workflow takes the Compatibility bullets and the upgrade notes below as its `compatibility` and `upgrade_notes` inputs.
 
 ## Compatibility
 
 - Declares the Micelio release line `0.7` (`"micelio": "0.7"` in `package.json`).
-- Tested with `@micelio/strapi-plugin-core` `0.2.0` (peer range `^0.2.0`), Strapi `5.59.0` and `strapi-plugin-comments` `3.2.4`. The core release that declares the `0.7` line, and a peer range that admits it, come later.
+- Tested with `@micelio/strapi-plugin-core` `0.4.0` (the suites' pinned devDependency) and `0.2.0` (once by hand), Strapi `5.59.0` and `strapi-plugin-comments` `3.2.4`. The peer range is `^0.2.0 || ^0.4.0` (0.7.1; 0.7.0 declared `^0.2.0` and was tested with `0.2.0` only).
 - Node `>=22.19.0`.
 - PostgreSQL `14` or later, the minimum Strapi 5 documents for its PostgreSQL support, for the durable delivery queue (the two PostgreSQL suites were not run on a stated version in this release). SQLite works without the durable queue: deliveries then wait in memory and a restart loses them ([configure.md](configure.md#delivery-queue-and-database-connections)).
 
@@ -44,3 +44,11 @@ What the release adds to the plan, from the building of the change:
 - **The username is locked while the actor has followers.** Content Manager → Sites answers `409` with the code `username-locked` to a change; on 0.6 it was free. Change it before you have followers, or not at all.
 - **The first `Update(Person)`.** The first 0.7 boot sends one, because the actor now lists the CMS host in `attributionDomains`.
 - **Roles.** The Content Manager lists the Fediverse profile and the **Fediverse actor** section to any role that can read `Site`, and lets any role that can update `Site` edit them. The profile is public in the actor document; the username and the identifier locks hold whoever edits.
+
+## 0.7.1
+
+A patch with no change of behaviour, route, log line, variable or UID. Nothing to do.
+
+- The peer range of `@micelio/strapi-plugin-core` is now `^0.2.0 || ^0.4.0`: a host on the core `0.2.0` keeps working, and a host on the core `0.4.0`, the release that declares the Micelio line `0.7`, can install this package. On `0.x` a caret admits only one minor, so `0.3.z` is not in the range.
+- Tested with `@micelio/strapi-plugin-core` `0.4.0` (the suites' devDependency, pinned) and, once by hand, `0.2.0`; Strapi `5.59.0` and `strapi-plugin-comments` `3.2.4` as before.
+- The core's `!` changes of 0.3.0 and 0.4.0 (budget, islands, review, SEO) change what a publish of a page accepts, not the hooks: the plugin's `afterPublish` and `afterUnpublish` handlers receive the same payload and still federate (`test/fediverse-editorial-hooks.test.ts`). Upgrade the core by its own release notes.
