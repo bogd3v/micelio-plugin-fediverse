@@ -11,6 +11,7 @@ import {
   Note,
   PUBLIC_COLLECTION,
   Tombstone,
+  Translation,
   Update,
   type Activity,
 } from '@fedify/fedify/vocab'
@@ -42,6 +43,11 @@ interface ImageCreditRow {
   modifications?: string | null
 }
 
+/** `shared.translation-credit`, the optional credits of one locale (ADR-0025 of `bogd3v/micelio`). */
+interface TranslationCreditRow {
+  actorUrl?: unknown
+}
+
 interface MediaRow {
   url?: string | null
   mime?: string | null
@@ -58,6 +64,7 @@ interface ArticleRow {
   updatedAt?: string | null
   cover?: MediaRow | null
   coverCredit?: ImageCreditRow | null
+  translationCredits?: TranslationCreditRow[] | null
   seo?: { metaImage?: MediaRow | null } | null
 }
 
@@ -67,6 +74,13 @@ const ARTICLE_POPULATE = {
   coverCredit: true,
   seo: { populate: { metaImage: true } },
 }
+
+/**
+ * An absolute `https:` address as an editor writes it, with a host after the `//`: `new URL` alone
+ * also accepts `https:host`, and reads both `https:///users/a` and `https://\users/a` as the host
+ * `users`, because it skips every slash and backslash there.
+ */
+const ABSOLUTE_HTTPS_URL = /^https:\/\/[^\s/\\]\S*$/i
 
 let warnedLocaleVariable = false
 
@@ -241,6 +255,28 @@ export function formatCreditHtml(
   return `${kind}: ${parts.join(' · ')}`
 }
 
+/**
+ * The populate of `translationCredits`, empty on a host whose article has no such attribute: the
+ * attribute is optional, and Strapi refuses to populate one that does not exist.
+ */
+function translationCreditsPopulate(strapi: Core.Strapi): { translationCredits?: true } {
+  const article = strapi.contentType(ARTICLE_UID as never) as
+    { attributes?: Record<string, unknown> } | undefined
+  return article?.attributes?.translationCredits ? { translationCredits: true } : {}
+}
+
+/**
+ * The credited actor URLs that can be published: absolute `https:` URLs without credentials. The
+ * check is on the syntax only, and the plugin never requests them (ADR-0025, section 3).
+ */
+function usableTranslators(credits: TranslationCreditRow[] | null | undefined): string[] {
+  return (credits ?? []).flatMap(({ actorUrl }) => {
+    if (typeof actorUrl !== 'string' || !ABSOLUTE_HTTPS_URL.test(actorUrl)) return []
+    const url = URL.parse(actorUrl)
+    return url && !url.username && !url.password ? [url.href] : []
+  })
+}
+
 function toLocale(row: ArticleRow): ArticleLocale | null {
   // Federating an article without a slug would produce a broken frontend URL.
   if (!row.slug || !row.title || !row.locale) return null
@@ -252,6 +288,7 @@ function toLocale(row: ArticleRow): ArticleLocale | null {
     // The credit is shown only with the cover it belongs to, as in the default locale's `content`.
     creditHtml:
       toImage(row.cover, formatCreditHtml(row.coverCredit, row.locale))?.creditHtml ?? null,
+    translators: usableTranslators(row.translationCredits),
     publishedAt: row.publishedAt ?? null,
     updatedAt: row.updatedAt ?? null,
   }
@@ -290,7 +327,7 @@ export async function findPublishedArticle(
     documentId,
     status: 'published',
     locale,
-    populate: ARTICLE_POPULATE,
+    populate: { ...ARTICLE_POPULATE, ...translationCreditsPopulate(strapi) },
   })) as ArticleRow | null
   const record = row ? toRecord({ ...row, locale: row.locale ?? locale }) : null
   if (record == null) return null
@@ -312,7 +349,7 @@ async function withLocales(
     status: 'published',
     locale: '*',
     filters: { documentId: { $in: records.map((record) => record.documentId) } },
-    populate: { cover: true, coverCredit: true },
+    populate: { cover: true, coverCredit: true, ...translationCreditsPopulate(strapi) },
     limit: -1,
   })) as ArticleRow[]
   return records.map((record) => {
@@ -364,7 +401,7 @@ export async function listPublishedArticles(
       sort: 'publishedAt:desc',
       start,
       limit,
-      populate: ARTICLE_POPULATE,
+      populate: { ...ARTICLE_POPULATE, ...translationCreditsPopulate(strapi) },
     }) as Promise<ArticleRow[]>,
     documents.count({ status: 'published', locale }),
   ])
@@ -414,7 +451,31 @@ function bodyOf(
   ].join('')
 }
 
-/** What both shapes share: the id, the addressing, the dates, the preview image and the body. */
+/**
+ * The FEP-22cd `translations` of an object: one entry for each locale of `contentMap` with a usable
+ * credit, and none while the map has a single locale. `sourceUpdated` and `isBasedOn` are left out
+ * on purpose (ADR-0025, section 5).
+ */
+function translationsOf(
+  id: URL,
+  record: ArticleRecord,
+  frontendDefault: string | undefined
+): Translation[] {
+  if (record.locales.length < 2) return []
+  return record.locales
+    .filter((entry) => entry.translators.length > 0)
+    .map(
+      (entry) =>
+        new Translation({
+          language: new Intl.Locale(entry.locale),
+          translators: entry.translators.map((actorUrl) => new URL(actorUrl)),
+          original: id,
+          url: getFrontendArticleUrl(entry.slug, entry.locale, frontendDefault),
+        })
+    )
+}
+
+/** What both shapes share: the id, the addressing, the dates, the preview image, the body and the translators. */
 function objectOptions(
   ctx: Context<unknown>,
   actorIdentifier: string,
@@ -453,10 +514,12 @@ function objectOptions(
       })
     : undefined
 
+  // The id is the `Article` route whatever the type: remote servers keep it, so switching the
+  // type never orphans an object already sent.
+  const id = ctx.getObjectUri(Article, { documentId: record.documentId })
+
   return {
-    // The id is the `Article` route whatever the type: remote servers keep it, so switching the
-    // type never orphans an object already sent.
-    id: ctx.getObjectUri(Article, { documentId: record.documentId }),
+    id,
     attribution: ctx.getActorUri(actorIdentifier),
     contents: [content, ...contentMap],
     url,
@@ -465,6 +528,7 @@ function objectOptions(
     image: cover,
     // GoToSocial ignores `image`; it only shows a cover that is an attachment.
     attachments: cover ? [cover] : [],
+    translations: translationsOf(id, record, frontendDefault),
     to: PUBLIC_COLLECTION,
     ccs: [ctx.getFollowersUri(actorIdentifier)],
   }

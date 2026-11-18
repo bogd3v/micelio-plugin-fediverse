@@ -8,12 +8,14 @@ import type { Core } from '@strapi/strapi'
 
 // Strapi is loaded as CommonJS, as a host loads it: its ESM build imports lodash's named exports,
 // which Node's ESM loader cannot resolve.
-const { createStrapi } = createRequire(import.meta.url)(
-  '@strapi/strapi'
-) as typeof import('@strapi/strapi')
+const require = createRequire(import.meta.url)
+const { createStrapi } = require('@strapi/strapi') as typeof import('@strapi/strapi')
 
 /** The clean Strapi the suites boot (`test/app/`), with only this plugin installed. */
 const APP_DIR = fileURLToPath(new URL('app', import.meta.url))
+
+/** Reads the environment `setupStrapi` sets when Node loads it, to choose the article's schema. */
+const ARTICLE_SCHEMA = path.join(APP_DIR, 'src/api/article/content-types/article/schema.js')
 
 declare global {
   // Strapi's global, set by `createStrapi` (`instance.load()`).
@@ -104,17 +106,26 @@ let instance: Core.Strapi | undefined
  * @param options.editorialArticle - Boots with `api::article.article` made with `withEditorial` of the
  * core (test/app/src/api/article/content-types/article/schema.js), as a host that moved it to the
  * editorial workflow. Unset, the article keeps the schema of its `base.json`.
+ * @param options.translationCredits - `false` boots `api::article.article` without its optional
+ * `translationCredits` attribute, as a host that has not added it.
  */
 async function setupStrapi({
   keepDatabase = false,
   editorialArticle = false,
-}: { keepDatabase?: boolean; editorialArticle?: boolean } = {}) {
+  translationCredits = true,
+}: { keepDatabase?: boolean; editorialArticle?: boolean; translationCredits?: boolean } = {}) {
   if (instance) {
     return instance
   }
 
   setupEnvironment()
   process.env.FEDIVERSE_TEST_EDITORIAL_ARTICLE = editorialArticle ? 'true' : 'false'
+  // Node keeps the schema of the worker's first boot: a boot that changes this option reloads it.
+  const withoutCredits = translationCredits ? 'false' : 'true'
+  if (process.env.FEDIVERSE_TEST_NO_TRANSLATION_CREDITS !== withoutCredits) {
+    delete require.cache[ARTICLE_SCHEMA]
+  }
+  process.env.FEDIVERSE_TEST_NO_TRANSLATION_CREDITS = withoutCredits
 
   // Start from an empty database
   if (keepDatabase) {

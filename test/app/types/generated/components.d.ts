@@ -1,5 +1,20 @@
 import type { Schema, Struct } from '@strapi/strapi'
 
+export interface FediverseActor extends Struct.ComponentSchema {
+  collectionName: 'components_fediverse_actors'
+  info: {
+    description: 'The path of the site\u2019s actor (/fediverse/user/<identifier>). It cannot change once set: remote servers key the followers by it'
+    displayName: 'Fediverse actor'
+    icon: 'globe'
+  }
+  attributes: {
+    identifier: Schema.Attribute.String &
+      Schema.Attribute.SetMinMaxLength<{
+        maxLength: 64
+      }>
+  }
+}
+
 export interface MicelioEditorialEditorial extends Struct.ComponentSchema {
   collectionName: 'components_micelio_editorial_editorials'
   info: {
@@ -8,12 +23,40 @@ export interface MicelioEditorialEditorial extends Struct.ComponentSchema {
     icon: 'check'
   }
   attributes: {
+    note: Schema.Attribute.Text &
+      Schema.Attribute.Private &
+      Schema.Attribute.SetPluginOptions<{
+        micelio: {
+          export: 'always'
+        }
+      }> &
+      Schema.Attribute.SetMinMaxLength<{
+        maxLength: 1000
+      }>
     publishAt: Schema.Attribute.DateTime
     publishedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'>
     reviewedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'>
     state: Schema.Attribute.Enumeration<['draft', 'in_review', 'scheduled', 'published']> &
       Schema.Attribute.Required &
       Schema.Attribute.DefaultTo<'draft'>
+  }
+}
+
+export interface MicelioPageVisibility extends Struct.ComponentSchema {
+  collectionName: 'components_micelio_page_visibilities'
+  info: {
+    description: 'Where a page shows up: the navigation menu, the sitemap and feeds, and search engines (the page settings of the builder)'
+    displayName: 'Visibility'
+    icon: 'eye'
+  }
+  attributes: {
+    inMenu: Schema.Attribute.Boolean & Schema.Attribute.Required & Schema.Attribute.DefaultTo<true>
+    inSitemap: Schema.Attribute.Boolean &
+      Schema.Attribute.Required &
+      Schema.Attribute.DefaultTo<true>
+    noindex: Schema.Attribute.Boolean &
+      Schema.Attribute.Required &
+      Schema.Attribute.DefaultTo<false>
   }
 }
 
@@ -205,26 +248,39 @@ export interface SharedSeo extends Struct.ComponentSchema {
     metaDescription: Schema.Attribute.String &
       Schema.Attribute.Required &
       Schema.Attribute.SetMinMaxLength<{
-        maxLength: 160
         minLength: 50
       }>
     metaImage: Schema.Attribute.Media<'images' | 'files' | 'videos'> & Schema.Attribute.Required
     metaRobots: Schema.Attribute.String
     metaSocial: Schema.Attribute.Component<'shared.meta-social', true>
-    metaTitle: Schema.Attribute.String &
-      Schema.Attribute.Required &
-      Schema.Attribute.SetMinMaxLength<{
-        maxLength: 60
-      }>
+    metaTitle: Schema.Attribute.String & Schema.Attribute.Required
     metaViewport: Schema.Attribute.String
     structuredData: Schema.Attribute.JSON
+  }
+}
+
+export interface SharedTranslationCredit extends Struct.ComponentSchema {
+  collectionName: 'components_shared_translation_credits'
+  info: {
+    description: 'The fediverse actor credited for the translation of a locale'
+    displayName: 'Translation credit'
+    icon: 'earth'
+  }
+  attributes: {
+    actorUrl: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.SetMinMaxLength<{
+        maxLength: 255
+      }>
   }
 }
 
 declare module '@strapi/strapi' {
   export namespace Public {
     export interface ComponentSchemas {
+      'fediverse.actor': FediverseActor
       'micelio-editorial.editorial': MicelioEditorialEditorial
+      'micelio-page.visibility': MicelioPageVisibility
       'micelio-site.accent-override': MicelioSiteAccentOverride
       'micelio-site.author': MicelioSiteAuthor
       'micelio-site.fediverse': MicelioSiteFediverse
@@ -234,6 +290,7 @@ declare module '@strapi/strapi' {
       'shared.image-credit': SharedImageCredit
       'shared.meta-social': SharedMetaSocial
       'shared.seo': SharedSeo
+      'shared.translation-credit': SharedTranslationCredit
     }
   }
 }

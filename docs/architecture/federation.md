@@ -41,15 +41,16 @@ The plugin is `@micelio/strapi-plugin-fediverse` (`plugin::fediverse`). It ran i
 
 ## Goal & Decisions
 
-| Decision         | Choice                                                                                                            |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Architecture     | **Fedify embedded in Strapi** as a plugin of the host: no sidecar service, single deploy unit                     |
-| Protocol library | [`@fedify/fedify`](https://fedify.dev) + `@fedify/koa` Koa middleware (same stack Ghost uses for its ActivityPub) |
-| Actor domain     | `cms.example.com` → handle `@blog@cms.example.com` (served directly by Strapi; no reverse-proxy changes)          |
-| Actor identity   | Single blog actor (not per-author)                                                                                |
-| Replies storage  | Existing `strapi-plugin-comments` collection, entering as `PENDING` for the existing approval workflow            |
-| Scope            | Follow + article federation + replies-as-comments **plus likes & boosts**                                         |
-| i18n             | One object per article, anchored on the default locale; every published locale is in its `contentMap`             |
+| Decision         | Choice                                                                                                               |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Architecture     | **Fedify embedded in Strapi** as a plugin of the host: no sidecar service, single deploy unit                        |
+| Protocol library | [`@fedify/fedify`](https://fedify.dev) + `@fedify/koa` Koa middleware (same stack Ghost uses for its ActivityPub)    |
+| Actor domain     | `cms.example.com` → handle `@blog@cms.example.com` (served directly by Strapi; no reverse-proxy changes)             |
+| Actor identity   | Single blog actor (not per-author)                                                                                   |
+| Replies storage  | Existing `strapi-plugin-comments` collection, entering as `PENDING` for the existing approval workflow               |
+| Scope            | Follow + article federation + replies-as-comments **plus likes & boosts**                                            |
+| i18n             | One object per article, anchored on the default locale; every published locale is in its `contentMap`                |
+| Translators      | Credited per locale as FEP-22cd `translations`, by actor URL, never in `attributedTo` (ADR-0025 of `bogd3v/micelio`) |
 
 Rejected alternatives (for context):
 
@@ -210,6 +211,8 @@ An inbox that answers `404` or `410` is gone for good. Fedify calls `setOutboxPe
    - publishing a translation before the default locale sends nothing: it is in the map of the `Create` the default locale's publish sends;
    - unpublishing or deleting a published translation sends an `Update` without it, when the article was sent and its default locale is still published (deleting a translation that was never published sends nothing, and `updated` of the object is the latest change of any locale, or the time of the refresh when a translation left the map, and "Federate now" or a retry after it never sends an older one: `federateArticle` floors it at the last `Update` the row records);
    - unpublishing or deleting the default locale sends `Delete` whatever translations stay published, because the object's `url` is the default locale's address.
+
+   **Translator credits (FEP-22cd, revision `6d0d6559`; ADR-0025 of `bogd3v/micelio`).** When the map has two or more locales, `translationsOf` in `server/src/services/articles.ts` adds one `Translation` to both shapes for each locale of the map with a usable credit in `translationCredits`, the default locale included: `inLanguage`, `translator` (the actor URLs), `translationOfWork` (the object's `id`) and `url` (that locale's frontend URL). The attribute is optional: the plugin populates it only when `api::article.article` has it. A credit is usable when its `actorUrl` is an absolute `https:` URL without credentials; the check is on the syntax, and the plugin never requests the URL. A locale with no usable credit has no entry, which FEP-22cd reads as directly authored, and neither has a published locale that is not in the map (`toLocale` drops one with no title or slug). With no entry the object is what it was without the feature, its `@context` included: Fedify adds the FEP-22cd context only to an object that has `translations`. Withdrawing a locale removes its map entry and its `Translation` in the same `Update`. Translators never enter `attributedTo`, and no entry carries `sourceUpdated` or `isBasedOn`: the object's `updated` moves with any locale, so it is not the source's timestamp FEP-22cd compares against. Decided for a region tag (issue #41): the `contentMap` key is lowercase (`pt-br`, as JSON-LD writes it) and Fedify writes `inLanguage` as `pt-BR`. The two are the same language, because BCP 47 tags compare without regard to case, so a consumer that pairs a `Translation` with its map entry compares them that way. Tests: `test/fediverse-translations.test.ts`.
 
    "Federate now" and the retry of a failed delivery send the current map. Replies are unchanged: stored in the default locale, and a reply whose `inReplyTo` is a translation's frontend URL resolves to the same article (`findArticleDocumentIdByUrl`). Stats are per document. What receiving servers do with the map (read on 2026-11-11): Mastodon shows `content` and falls back to the first entry of `contentMap` only when `content` is empty, and takes the post's language from the first key of `contentMap` (so the default locale first gives the right tag); GoToSocial picks the entry that matches the instance's configured languages, then the first. A follower on Mastodon therefore keeps seeing the default locale; the translations reach the servers that read the map. Tests: `test/fediverse-content-map.test.ts`.
 

@@ -1,0 +1,17 @@
+{
+  "collectionName": "components_shared_translation_credits",
+  "info": {
+    "displayName": "Translation credit",
+    "icon": "earth",
+    "description": "The fediverse actor credited for the translation of a locale"
+  },
+  "options": {},
+  "attributes": {
+    "actorUrl": {
+      "type": "string",
+      "required": true,
+      "maxLength": 255,
+      "regex": "^https://\\S+$"
+    }
+  }
+}
