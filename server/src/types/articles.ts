@@ -17,6 +17,8 @@ export interface ArticleLocale {
   slug: string
   /** The cover's attribution line (HTML) in this locale, when the cover has a credit. */
   creditHtml: string | null
+  /** The actor URLs credited for this locale's translation that can be published; empty when none. */
+  translators: string[]
   /** When this locale's version went live and was last saved: a translation's change is a change of the object. */
   publishedAt: string | null
   updatedAt: string | null

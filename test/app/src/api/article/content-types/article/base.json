@@ -59,6 +59,17 @@
         }
       }
     },
+    "translationCredits": {
+      "type": "component",
+      "repeatable": true,
+      "component": "shared.translation-credit",
+      "max": 10,
+      "pluginOptions": {
+        "i18n": {
+          "localized": true
+        }
+      }
+    },
     "category": {
       "type": "relation",
       "relation": "manyToOne",
