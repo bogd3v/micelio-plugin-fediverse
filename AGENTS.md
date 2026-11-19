@@ -28,7 +28,7 @@ The `test` script sets `UV_THREADPOOL_SIZE=64`: Vitest runs one worker per core 
 - `.claude/skills/strapi-fediverse/` — the skill for federation work, with the `fediverse` agent (`.claude/agents/fediverse.md`).
 - `test/` — the suites (`fediverse-*.test.ts`, `package.test.ts`), `strapi.ts` (boots the clean Strapi) and `helpers/`. `test/app/` is that clean Strapi 5 on SQLite: the plugin, `@micelio/strapi-plugin-core`, `strapi-plugin-comments` and users-permissions, with the content types and middlewares a host provides (see the README). `test/app/types/generated/` is written by `strapi ts:generate-types` (run it in `test/app` with `FEDIVERSE_ENABLED=true` and `FEDIVERSE_ACTOR_IDENTIFIER` set) when a content type of the app changes.
 - `scripts/` — `build.mjs` (`npm run build`), `check-licenses.mjs` (`npm run lint:licenses`) and `release/version.mjs` (the release plan, read by the Release workflow).
-- `.github/workflows/` — `ci.yml`, `release.yml` and `pr-labels.yml`; CI calls the reusable workflows of `micelio-engineering`.
+- `.github/workflows/` — `ci.yml`, `release.yml` and `pr-labels.yml`; CI calls the reusable workflows of `micelio-engineering`, and `ci.yml` also has the job `postgres-suites`, which runs the two PostgreSQL suites on a service container.
 
 ## Rules
 
