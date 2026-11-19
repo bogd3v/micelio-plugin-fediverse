@@ -16,7 +16,7 @@ const ROW_UID = 'plugin::fediverse.federated-article'
     /** Messages waiting in the queue table of this worker's database. */
     async function queuedMessages(): Promise<number> {
       const url = new URL(process.env.TEST_DATABASE_URL as string)
-      url.pathname = `/strapi_test_${process.env.JEST_WORKER_ID || '1'}`
+      url.pathname = `/strapi_test_${process.env.VITEST_POOL_ID || '1'}`
       const client = new Client({ connectionString: url.href })
       await client.connect()
       try {
@@ -74,11 +74,20 @@ const ROW_UID = 'plugin::fediverse.federated-article'
         expect(remote.inboxDeliveries).toHaveLength(0)
         await setupStrapi({ keepDatabase: true })
 
-        await waitUntil(() => remote.inboxDeliveries.length === 1, { timeoutMs: 20000 })
+        // The restarted boot may send an Update(Person) first (the new site has no stored
+        // fingerprint); what the queue promises is the one Create of the retry.
+        const creates = () =>
+          remote.inboxDeliveries.filter((delivery) => delivery.type === 'Create')
+        await waitUntil(() => creates().length === 1, { timeoutMs: 20000 })
         await new Promise<void>((resolve) => setTimeout(resolve, 500))
-        expect(remote.inboxDeliveries).toHaveLength(1)
-        expect(remote.inboxDeliveries[0].type).toBe('Create')
-        expect(remote.inboxAttempts).toBe(3)
+        expect(creates()).toHaveLength(1)
+        for (const delivery of remote.inboxDeliveries) {
+          if (delivery.type === 'Create') continue
+          expect(delivery.type).toBe('Update')
+          expect(delivery.object?.type).toBe('Person')
+        }
+        // The 2 refused attempts plus every delivery that was accepted.
+        expect(remote.inboxAttempts).toBe(2 + remote.inboxDeliveries.length)
 
         const row = await strapi.db
           .query(ROW_UID)
