@@ -39,3 +39,37 @@ jobs:
       security-events: write
       id-token: write
     uses: bogd3v/micelio-engineering/.github/workflows/scorecard.yml@6bdef931d988f8a75a2a164dd93ab109ff7a0d42 # main
+
+  postgres-suites:
+    name: PostgreSQL suites
+    if: ${{ github.event_name != 'schedule' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Run the PostgreSQL suites
+        run: npm test -- test/fediverse-queue-postgres.test.ts test/fediverse-delivery-restart.test.ts --reporter=default --reporter=json --outputFile.json=.tmp/postgres-suites.json
+      - name: Fail when a suite was skipped
+        run: jq -e '.numTotalTests > 0 and .numPendingTests == 0' .tmp/postgres-suites.json
