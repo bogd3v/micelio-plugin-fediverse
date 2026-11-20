@@ -68,7 +68,7 @@
     "strapi-plugin-comments": "^3.2.4"
   },
   "devDependencies": {
-    "@micelio/eslint-config": "^0.2.8",
+    "@micelio/eslint-config": "^0.2.11",
     "@micelio/prettier-config": "^0.1.0",
     "@micelio/strapi-plugin-core": "0.6.0",
     "@micelio/tsconfig": "^0.1.0",
