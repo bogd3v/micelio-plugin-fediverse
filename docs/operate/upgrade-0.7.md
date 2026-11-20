@@ -1,11 +1,11 @@
-# Release notes and upgrade notes: 0.7.0, 0.7.1 and 0.7.2
+# Release notes and upgrade notes: 0.7.0, 0.7.1, 0.7.2 and 0.7.3
 
-**Kind:** how-to. The release notes of `@micelio/strapi-plugin-fediverse` `0.7.0` (a breaking change before 1.0.0: standard, section 7), from the plan in `docs/architecture/fediverse-cut-over.md` of `bogd3v/micelio-cms`, and of the patches `0.7.1` and `0.7.2` (last sections). The Release workflow takes the Compatibility bullets and the upgrade notes below as its `compatibility` and `upgrade_notes` inputs.
+**Kind:** how-to. The release notes of `@micelio/strapi-plugin-fediverse` `0.7.0` (a breaking change before 1.0.0: standard, section 7), from the plan in `docs/architecture/fediverse-cut-over.md` of `bogd3v/micelio-cms`, and of the patches `0.7.1`, `0.7.2` and `0.7.3` (last sections). The Release workflow takes the Compatibility bullets and the upgrade notes below as its `compatibility` and `upgrade_notes` inputs.
 
 ## Compatibility
 
 - Declares the Micelio release line `0.7` (`"micelio": "0.7"` in `package.json`).
-- Tested with `@micelio/strapi-plugin-core` `0.5.0` (the suites' pinned devDependency) and `0.4.0` and `0.2.0` (once by hand each), Strapi `5.59.0` and `strapi-plugin-comments` `3.2.4`. The peer range is `^0.2.0 || ^0.4.0 || ^0.5.0` (0.7.2; 0.7.1 declared `^0.2.0 || ^0.4.0` and 0.7.0 declared `^0.2.0`).
+- Tested with `@micelio/strapi-plugin-core` `0.6.0` (the suites' pinned devDependency) and `0.5.0`, `0.4.0` and `0.2.0` (once by hand each), Strapi `5.59.0` and `strapi-plugin-comments` `3.2.4`. The peer range is `^0.2.0 || ^0.4.0 || ^0.5.0 || ^0.6.0` (0.7.3; 0.7.2 declared `^0.2.0 || ^0.4.0 || ^0.5.0`, 0.7.1 declared `^0.2.0 || ^0.4.0` and 0.7.0 declared `^0.2.0`).
 - Node `>=22.19.0`.
 - PostgreSQL `14` or later, the minimum Strapi 5 documents for its PostgreSQL support, for the durable delivery queue (the two PostgreSQL suites were not run on a stated version in this release). SQLite works without the durable queue: deliveries then wait in memory and a restart loses them ([configure.md](configure.md#delivery-queue-and-database-connections)).
 
@@ -62,3 +62,11 @@ The widened peer range changes no behaviour, route, log line, variable or UID. T
 - The peer range of `@micelio/strapi-plugin-core` is now `^0.2.0 || ^0.4.0 || ^0.5.0`: a host on the core `0.2.0` or `0.4.0` keeps working, and a host on the core `0.5.0` can install this package. On `0.x` a caret admits only one minor, so `0.3.z` is not in the range.
 - Tested with `@micelio/strapi-plugin-core` `0.5.0` (the suites' devDependency, pinned) and, once by hand each, `0.4.0` and `0.2.0`; Strapi `5.59.0` and `strapi-plugin-comments` `3.2.4` as before. The declared Micelio release line stays `0.7`.
 - The core's one `!` change of 0.5.0 refuses a `newsletter` block on a site whose module is off: it concerns what a save of a page accepts, not the hooks. The plugin's `afterPublish` and `afterUnpublish` handlers receive the same payload and still federate (`test/fediverse-editorial-hooks.test.ts`). Upgrade the core by its own release notes.
+
+## 0.7.3
+
+The widened peer range changes no behaviour, route, log line, variable or UID. Nothing to do.
+
+- The peer range of `@micelio/strapi-plugin-core` is now `^0.2.0 || ^0.4.0 || ^0.5.0 || ^0.6.0`: a host on the core `0.2.0`, `0.4.0` or `0.5.0` keeps working, and a host on the core `0.6.0` can install this package. On `0.x` a caret admits only one minor, so `0.3.z` is not in the range.
+- Tested with `@micelio/strapi-plugin-core` `0.6.0` (the suites' devDependency, pinned) and, once by hand each, `0.5.0`, `0.4.0` and `0.2.0`; Strapi `5.59.0` and `strapi-plugin-comments` `3.2.4` as before. The declared Micelio release line stays `0.7`.
+- The core's one `!` change of 0.6.0 removes the `rich-text` block from the catalogue, makes `prose` the one Markdown block (allowed in a page's zone and in an article's) and refuses a save whose `prose` body has wrong heading levels (`proseHeadingInvalid`): it concerns what a save of a page or an article accepts, not the hooks. The plugin uses none of it: its `afterPublish` and `afterUnpublish` handlers receive the same payload and still federate (`test/fediverse-editorial-hooks.test.ts`). Upgrade the core by its own release notes.
