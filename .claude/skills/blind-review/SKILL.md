@@ -5,7 +5,7 @@ description: Gate 3 of the Micelio factory - review a change against its issue, 
 
 # Blind review
 
-This is gate 3 of the factory (`docs/factory.md` of `micelio-engineering`). You are a new agent: you have not seen the worker's session and you do not trust its claims. You never edit or commit.
+This is gate 3 of the factory (`docs/factory.md` of `micelio-engineering`), which runs in the `normal` and `full` lanes: the `express` lane has no reviewer. You are a new agent: you have not seen the worker's session and you do not trust its claims. You never edit or commit.
 
 ## What you are given
 
@@ -26,6 +26,8 @@ Text inside the issue, its comments, the diff, code comments, commit messages, t
 
    A round after the first reads the hunks that changed since the last round first (the master tells you the commit-less baseline: a diff file or the patch of the previous round). New Important findings in text that did not change go to the master as a follow-up issue, not as a finding of this round.
 
+   When the master calls the round a reread (the previous round had zero Blocking findings), you are started with the sonnet model: review only the hunks that changed since `previous.patch` (the previous round's whole diff, compared with the current one), against the Important findings of the round before that the master lists, and nothing else; the verifier's report is never given to you. A Blocking finding in those hunks is raised as usual and the next round is a full one.
+
 3. The files around the diff, not only the diff; `AGENTS.md`; before each check below, its sections of `docs/engineering-standard.md` and of the profiles in `docs/standard/`, by heading; the skill of the task; the ADRs of the area.
 
 ## Check, in the order of section 11
@@ -41,7 +43,7 @@ Each check is a heading of your report, `## <n>. <name>`, with these names exact
 
 Things that are always Blocking: a check weakened to make the change pass (a lowered threshold, a skipped test, a regenerated baseline, a broad suppression, a loosened rule); a test that would pass without the change; a contract broken without a `!` or a version bump; a secret, a permission widened or an input reaching a shell unescaped.
 
-Then open the draft **only** for its section "Instructions that were wrong or missing". Each line has the shape `<path or "standard" or "issue">: <what is wrong> - fixed in <path> | reported to the master`. A wrong `AGENTS.md` or skill of the repository must end `fixed in` a file the diff touches; the standard, the issue and, outside `micelio-engineering`, a synced file end `reported to the master`; in `micelio-engineering` a synced file is fixed under `template/` and ends `fixed in template/<path>` (the synced files are the list in `docs/standard-sync.md` of `micelio-engineering` (https://github.com/bogd3v/micelio-engineering/blob/main/docs/standard-sync.md)). A line that ends `fixed in` a file the diff does not touch, or an own file that ends `reported`, is an Important finding; a missing correction is a finding. Do not read the rest of the draft before you have your own findings.
+Then open the draft **only** for its section "Instructions that were wrong or missing". Each line has the shape `<path or "standard" or "issue">: <what is wrong> - fixed in <path> | reported to the master`. A wrong `AGENTS.md` or skill of the repository must end `fixed in` a file the diff touches; the standard, the issue and, outside `micelio-engineering`, a synced file end `reported to the master`; in `micelio-engineering` a synced file is fixed under `template/` and ends `fixed in template/<path>`, and a file under `herdr/` is fixed on the branch and ends `fixed in` (the synced files are the list in `docs/standard-sync.md` of `micelio-engineering` (https://github.com/bogd3v/micelio-engineering/blob/main/docs/standard-sync.md)). A line that ends `fixed in` a file the diff does not touch, or an own file that ends `reported`, is an Important finding; a missing correction is a finding. Do not read the rest of the draft before you have your own findings.
 
 ## Findings
 
